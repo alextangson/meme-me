@@ -1184,3 +1184,67 @@ def test_retry_daily_cap_gates_gacha(client, monkeypatch):
     _wait_done(client, job_id)
     me = client.get("/api/me", params={"device": DEV}).json()
     assert me["retry_remaining"] == 30 - 2
+
+
+# ---- 上游用量统计（admin 成本侧） ----
+
+
+def test_usage_logged_per_image_with_provider(client, tmp_path, monkeypatch):
+    import json as _json
+
+    monkeypatch.setattr(webapp, "EVENTS_FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(webapp, "ADMIN_KEY", "k")
+    job_id = _animated_job(client)  # 8 张，默认 provider=gemini 中转
+    rows = [
+        _json.loads(line)
+        for line in (tmp_path / "events.jsonl").read_text().splitlines()
+    ]
+    imgs = [r for r in rows if r["name"] == "usage" and r["kind"] == "image"]
+    assert len(imgs) == 8
+    assert all(r["provider"] == "gemini" for r in imgs)
+    assert imgs[0]["job_id"] == job_id
+
+    u = client.get("/api/admin/data", params={"key": "k"}).json()["usage"]
+    assert u["total"]["image"]["gemini"] == 8
+    assert u["total"]["cost"] == 0  # 中转包月边际记 0
+    assert u["today"]["image"]["gemini"] == 8
+
+
+def test_usage_records_fallback_as_seedream_with_cost(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(webapp, "EVENTS_FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(webapp, "ADMIN_KEY", "k")
+
+    class Boom:
+        def generate(self, prompt, reference):
+            raise RuntimeError("relay down")
+
+    fallback = client.fake_provider
+    monkeypatch.setattr(webapp, "_make_provider", lambda name="": Boom())
+    monkeypatch.setattr(webapp, "_fallback_image_provider", lambda n: fallback)
+    job_id = _animated_job(client)  # 主力全挂 → 每张走即梦兜底
+    u = client.get("/api/admin/data", params={"key": "k"}).json()["usage"]
+    assert u["total"]["image"]["seedream"] == 8
+    assert abs(u["total"]["cost"] - 8 * 0.2) < 0.01
+
+
+def test_video_usage_records_tokens(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(webapp, "EVENTS_FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(webapp, "ADMIN_KEY", "k")
+
+    class FakeVideo:
+        last_usage = 27000  # 方舟任务响应里的 completion_tokens
+
+        def animate(self, prompt, image, **kw):
+            return b"MP4"
+
+    monkeypatch.setattr(webapp, "_make_video_provider", lambda: FakeVideo())
+    monkeypatch.setattr(webapp, "mp4_to_wechat_gif", lambda mp4, **kw: _tiny_gif())
+    job_id = _animated_job(client)
+    assert client.post(
+        f"/api/jobs/{job_id}/animate/1", data={"mode": "video", "device": DEV}
+    ).status_code == 200
+    _wait_anim(client, job_id, 0)
+    u = client.get("/api/admin/data", params={"key": "k"}).json()["usage"]
+    assert u["total"]["videos"] == 1
+    assert u["total"]["video_tokens"] == 27000
+    assert 0.40 <= u["total"]["cost"] <= 0.41  # 27000/1000 × 0.015

@@ -53,6 +53,7 @@ class SeedanceVideoProvider:
             raise RuntimeError("Seedance 需要 ARK_API_KEY 环境变量")
         self._model = model or os.environ.get("MEMEME_SEEDANCE_MODEL", DEFAULT_MODEL)
         self._base_url = os.environ.get("ARK_BASE_URL", DEFAULT_BASE_URL)
+        self.last_usage = 0  # 最近一次任务消耗的 tokens（方舟按 token 计费）
 
     def animate(self, prompt: str, image: bytes, *, timeout: float | None = None) -> bytes:
         """Returns mp4 bytes.
@@ -80,6 +81,9 @@ class SeedanceVideoProvider:
             ).json()
             url = extract_video_url(status)
             if url:
+                self.last_usage = int(
+                    (status.get("usage") or {}).get("completion_tokens") or 0
+                )
                 video = httpx.get(url, timeout=120, follow_redirects=True, trust_env=False)
                 video.raise_for_status()
                 return video.content

@@ -73,6 +73,11 @@
   </section>
 
   <section>
+    <h2>上游用量 · 成本（usage 埋点上线后起算）</h2>
+    <div class="cards" id="usageCards"></div>
+  </section>
+
+  <section>
     <h2>B 端定制线索</h2>
     <table><thead><tr><th>联系方式</th><th>需求</th><th>时间</th></tr></thead><tbody id="leads"></tbody></table>
   </section>
@@ -137,6 +142,16 @@ function render(d) {
     <div class="stat"><b>${cu.used}/${cu.total}</b><span>9.9 码 已用/已发</span></div>
     <div class="stat"><b>${cc.used}/${cc.total}</b><span>29.9 码 已用/已发</span></div>
     <div class="stat"><b>${(m.event || {}).uses || 0}</b><span>活动码核销数</span></div>`;
+
+  const u = d.usage || { total: { image: {}, videos: 0, video_tokens: 0, cost: 0 },
+                         today: { image: {}, videos: 0, video_tokens: 0, cost: 0 } };
+  $('usageCards').innerHTML = `
+    <div class="stat"><b class="accent">¥${u.today.cost.toFixed(2)}</b><span>今日预估成本</span></div>
+    <div class="stat"><b>¥${u.total.cost.toFixed(2)}</b><span>累计预估成本</span></div>
+    <div class="stat"><b>${u.today.image.gemini || 0} / ${u.total.image.gemini || 0}</b><span>中转出图 今日/累计（包月≈0）</span></div>
+    <div class="stat"><b class="accent">${u.today.image.seedream || 0} / ${u.total.image.seedream || 0}</b><span>即梦出图 今日/累计（¥0.2/张）</span></div>
+    <div class="stat"><b>${u.today.videos} / ${u.total.videos}</b><span>视频 今日/累计</span></div>
+    <div class="stat"><b>${(u.total.video_tokens / 1000).toFixed(1)}k</b><span>视频 tokens 累计（¥0.015/千）</span></div>`;
 
   const packs = Object.entries(d.jobs.by_pack).sort((a, b) => b[1] - a[1]);
   const max = packs.length ? packs[0][1] : 1;

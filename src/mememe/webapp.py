@@ -114,6 +114,7 @@ def _generate_custom_preview(pack, path: Path) -> None:
             f"画面文案（渲染在图内下方）：「{meme.caption}」"
         )
         raw = _make_t2i()(prompt)
+        _log_event("usage", kind="image", provider="seedream", via="preview")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(to_sticker_png(raw))
     except Exception:
@@ -319,6 +320,8 @@ def _generate_one(job: Job, provider: ImageProvider, pos: int) -> None:
     )
     with job.lock:
         job.images[pos]["status"] = "running"
+    primary = job.provider_name or DEFAULT_PROVIDER
+    used = primary
     try:
         try:
             raw = provider.generate(prompt, job.selfie)
@@ -327,6 +330,8 @@ def _generate_one(job: Job, provider: ImageProvider, pos: int) -> None:
             if fallback is None:
                 raise
             raw = fallback.generate(prompt, job.selfie)
+            used = "gemini" if primary == "seedream" else "seedream"
+        _log_event("usage", kind="image", provider=used, job_id=job.id, index=index)
         _write_one(job, index, raw)
         with job.lock:
             job.images[pos]["status"] = "done"
@@ -373,6 +378,8 @@ def _make_anim_gif(
     if mode == "frames":
         raw = (job.out_dir / f"raw-{stem}.png").read_bytes()
         prompt = compile_keyframe(job.pack, job.pack.memes[pos], motion_override=motion)
+        primary = job.provider_name or DEFAULT_PROVIDER
+        used = primary
         try:
             alt = provider.generate(prompt, raw)
         except Exception:
@@ -380,6 +387,11 @@ def _make_anim_gif(
             if fallback is None:
                 raise
             alt = fallback.generate(prompt, raw)
+            used = "gemini" if primary == "seedream" else "seedream"
+        _log_event(
+            "usage", kind="image", provider=used,
+            job_id=job.id, index=index, via="frames",
+        )
         frames = [
             Image.open(io.BytesIO((job.out_dir / f"{stem}.png").read_bytes())),
             Image.open(
@@ -414,6 +426,12 @@ def _run_animate(
         _VIDEO_SLOTS.acquire()  # 排队等槽位，慢一点可以，撞配额超时不行
     try:
         gif = _make_anim_gif(job, index, mode, provider, motion)
+        if mode == "video":
+            _log_event(
+                "usage", kind="video", provider="seedance",
+                job_id=job.id, index=index,
+                tokens=int(getattr(provider, "last_usage", 0) or 0),
+            )
         stem = _sticker_stem(job, index)
         (job.out_dir / f"{stem}.anim.gif").write_bytes(gif)
         with job.lock:
@@ -457,6 +475,11 @@ def _run_retry(
             caption_style=job.caption_style,
         )
         raw = provider.generate(prompt, job.selfie)
+        _log_event(
+            "usage", kind="image",
+            provider=job.provider_name or DEFAULT_PROVIDER,
+            job_id=job.id, index=index, via="retry",
+        )
         _write_one(job, index, raw)
         with job.lock:
             job.images[pos]["status"] = "done"
@@ -487,6 +510,39 @@ def _read_jsonl(path: Path, limit: int | None = None) -> list[dict]:
         except ValueError:
             continue
     return rows[-limit:] if limit else rows
+
+
+def _usage_summary(events: list[dict]) -> dict:
+    """上游用量与成本估算：即梦按张 ¥0.2；seedance 按 token ¥0.015/千，
+    没拿到 tokens 的旧视频按方形 480p/5s ≈2.7 万 tokens（¥0.41）估；
+    中转 Gemini 包月，边际记 0。只统计 usage 埋点之后的数据。"""
+    today = time.strftime("%Y-%m-%d")
+    out = {
+        "total": {"image": {}, "videos": 0, "video_tokens": 0, "cost": 0.0},
+        "today": {"image": {}, "videos": 0, "video_tokens": 0, "cost": 0.0},
+    }
+    for e in events:
+        if e.get("name") != "usage":
+            continue
+        buckets = [out["total"]]
+        if time.strftime("%Y-%m-%d", time.localtime(e.get("ts", 0))) == today:
+            buckets.append(out["today"])
+        if e.get("kind") == "image":
+            p = e.get("provider") or "?"
+            cost = 0.2 if p == "seedream" else 0.0
+            for b in buckets:
+                b["image"][p] = b["image"].get(p, 0) + 1
+                b["cost"] += cost
+        elif e.get("kind") == "video":
+            tokens = int(e.get("tokens") or 0)
+            cost = tokens / 1000 * 0.015 if tokens else 0.41
+            for b in buckets:
+                b["videos"] += 1
+                b["video_tokens"] += tokens
+                b["cost"] += cost
+    for b in (out["total"], out["today"]):
+        b["cost"] = round(b["cost"], 2)
+    return out
 
 
 def _admin_data(jobs: dict[str, "Job"], store: entitlements.Store) -> dict:
@@ -524,6 +580,7 @@ def _admin_data(jobs: dict[str, "Job"], store: entitlements.Store) -> dict:
         "errors": sorted(errors, key=lambda x: x["ts"], reverse=True)[:50],
         "jobs": {"total": len(jobs), "by_status": by_status, "by_pack": by_pack, "recent": recent},
         "monetize": store.summary(),  # 兑换码库存 + 设备/付费设备数
+        "usage": _usage_summary(events),  # 上游用量与成本（对照收入看毛利）
     }
 
 

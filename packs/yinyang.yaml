@@ -5,6 +5,7 @@ name: 阴阳大师
 description: 群聊语境的 16 句高频阴阳怪气，微表情艺术
 version: 1
 language: zh
+style_id: lineart
 
 style: |
   Q版三头身（chibi）贴纸插画风格，粗白色描边，背景必须纯白。

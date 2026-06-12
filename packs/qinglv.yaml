@@ -5,6 +5,7 @@ name: 情侣日常
 description: 上传你俩的合照——互怼一半、发糖一半的 16 个同框瞬间
 version: 1
 language: zh
+style_id: mochi
 subject: group
 
 style: |

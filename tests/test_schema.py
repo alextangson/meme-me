@@ -105,3 +105,13 @@ def test_group_subject_accepted():
     data = _minimal_pack_dict()
     data["subject"] = "group"
     assert Pack.model_validate(data).subject == "group"
+
+
+def test_pack_style_id_loads_and_defaults_empty():
+    from pathlib import Path
+
+    from mememe.core.schema import load_pack
+
+    root = Path(__file__).parent.parent / "packs"
+    assert load_pack(root / "yundong.yaml").style_id == "pop"
+    assert load_pack(root / "shechu.yaml").style_id == ""  # 旗舰保持经典贴纸

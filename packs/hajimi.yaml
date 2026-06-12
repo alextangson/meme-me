@@ -5,6 +5,7 @@ name: 哈基米
 description: 把你变成一只猫系小动物，16 个猫味十足的日常反应
 version: 1
 language: zh
+style_id: anime
 
 style: |
   Q版三头身（chibi）贴纸插画风格，粗白色描边，背景必须纯白。

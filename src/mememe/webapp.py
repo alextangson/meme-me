@@ -36,6 +36,7 @@ from mememe.core.postprocess import (
     to_sticker_png,
 )
 from mememe.core.schema import Pack, load_pack
+from mememe.core.styles import STYLES
 from mememe.providers.base import ImageProvider
 from mememe import entitlements
 
@@ -961,6 +962,9 @@ def create_app() -> FastAPI:
         else:
             device = ""
         pack = load_pack(pack_path)
+        # 主题×画风：用户没显式选画风时，用主题推荐的画风（aha 的第一眼）
+        if not style and pack.style_id in STYLES:
+            style = pack.style_id
         job_id = uuid.uuid4().hex[:12]
         out_dir = OUTPUT_ROOT / job_id
         out_dir.mkdir(parents=True, exist_ok=True)

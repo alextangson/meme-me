@@ -1291,3 +1291,35 @@ def test_vip_plan_grants_everything(agent_client):
     ).status_code == 200
     job = _wait_done(agent_client, job_id)
     assert len(job["images"]) == 16
+
+
+# ---- 主题×画风：推荐画风默认生效，显式选择优先 ----
+
+
+def test_pack_default_style_applied(client, tmp_path):
+    import json as _json
+
+    resp = client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data={"pack_id": "yundong"},
+    )
+    job_id = resp.json()["job_id"]
+    _wait_done(client, job_id)
+    meta = _json.loads((tmp_path / job_id / "job.json").read_text())
+    assert meta["style"] == "pop"  # 运动达人 → 波普美漫
+    assert any("波普" in p for p in client.fake_provider.prompts)
+
+
+def test_explicit_style_beats_pack_default(client, tmp_path):
+    import json as _json
+
+    resp = client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data={"pack_id": "yundong", "style": "anime"},
+    )
+    job_id = resp.json()["job_id"]
+    _wait_done(client, job_id)
+    meta = _json.loads((tmp_path / job_id / "job.json").read_text())
+    assert meta["style"] == "anime"

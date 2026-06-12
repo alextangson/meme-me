@@ -27,6 +27,9 @@ class Pack(BaseModel):
     subject: Literal["person", "pet", "group"] = "person"
     subject_desc: str = ""  # 主角外观描述，定制包用于无照片的风格预览
     style: str = Field(min_length=1)
+    # 推荐画风（styles.py 的 id）：主题×合适画风的结合——用户没显式选画风时
+    # 默认用它；留空 = 经典贴纸。画风弹窗里的显式选择永远优先。
+    style_id: str = ""
     memes: list[Meme] = Field(min_length=1)
 
     @field_validator("memes")

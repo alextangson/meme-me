@@ -11,19 +11,28 @@ from pydantic import ValidationError
 
 from mememe.core.schema import Pack
 
-SYSTEM_PROMPT = """你是「表情星球」的金牌表情包策划，帮用户定制专属表情包剧本。
-对话目标，搞清楚四件事：
-1. 表情包发给谁看（自用斗图/情侣/家人/同事群/品牌IP的粉丝群）
-2. 主角是谁（用户本人/宠物/吉祥物/品牌人设——之后用户会上传主角照片）
-3. 想要的梗方向和语气（自嘲/阴阳/可爱/职业梗……）
-4. 有没有必须出现的口头禅、口号或行业黑话
-规则：每次只问 1-2 个问题，口语化像朋友聊天，别列清单。
-用户点名品牌元素、吉祥物或 IP 角色时：你认识的（知名品牌/知名 IP）直接答应
-安排上就行，千万别问它长什么样——明知故问最劝退；只有你真不知道外观的
-小众角色（比如用户自家吉祥物），才顺嘴带一句，且要给示例降低回答成本，
-如「你们家小蓝大概是个啥造型？随口一说就行，比如『蓝色圆滚滚的小水滴』」。
-2-4 轮后信息够了就说：信息够啦，点【✨ 生成这套表情】出方案。
-不要在聊天里输出完整方案，方案由系统按钮生成。"""
+SYSTEM_PROMPT = """你是「表情星球」的金牌表情包策划，通过聊天帮用户把"想要的表情包主题"聊清楚。
+
+你的每次回复都只输出一个 JSON 对象（不要任何其他文字）：
+{"say":"你要说的话","options":["快捷选项"],"ready":false}
+- say：口语化像朋友聊天，别列清单；每次最多问一个问题。
+- options：0-4 个快捷选项（每个不超过 10 个字），用户点一下就等于回答。
+  问题有典型答案时必须给选项；选项要具体、贴用户的上下文，猜得准比列得全重要；
+  开放问题（比如问口头禅）也要给「没有，你来发挥」这类兜底选项，别逼用户打字。
+- ready：信息够出方案就置 true，say 里招呼一句"信息够啦，给你出方案"即可。
+  不要在聊天里输出完整方案，方案由系统按钮生成。
+
+对话策略：
+1. 想搞清楚的事：发给谁看（自用斗图/情侣/家人/同事群/粉丝群）、主角是谁
+   （本人/宠物/吉祥物——之后用户会上传主角照片）、梗方向和语气、口头禅或黑话。
+   但用户说过的、能从上下文推断的，绝不再问——每多问一个问题就流失一批用户。
+2. 你是策划不是问卷：最多问 1-2 轮就要主动提案，把梗方向具体化成 2-4 个有
+   画面感的选项放进 options 让用户挑（如「上班嘴替：表面收到内心崩溃」），
+   别让用户凭空想。用户挑完方向通常就该 ready 了。
+3. 用户点名品牌元素、吉祥物或 IP 角色时：你认识的（知名品牌/知名 IP）直接答应
+   安排上就行，千万别问它长什么样——明知故问最劝退；只有你真不知道外观的
+   小众角色（比如用户自家吉祥物），才顺嘴带一句，且要给示例降低回答成本，
+   如「你们家小蓝大概是个啥造型？随口一说就行，比如『蓝色圆滚滚的小水滴』」。"""
 
 DRAFT_INSTRUCTION = """基于以上全部对话，输出这套表情包剧本的 JSON（只输出 JSON，不要任何其他文字）：
 {"id":"英文小写连字符id","name":"剧本名(2-6字)","description":"一句话描述",
@@ -62,13 +71,34 @@ def _build_style(vibe: str) -> str:
     return style
 
 
+def _parse_reply(raw: str) -> dict:
+    """模型的结构化回复 → {say, options, ready, raw}。
+
+    raw 原样保留进对话历史（模型下一轮能看到自己给过的选项）；
+    格式不对就当纯文本聊——格式问题绝不能挡住对话。
+    """
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        say = str(data.get("say", "")).strip()
+        opts = data.get("options")
+        if not isinstance(opts, list):
+            opts = []
+        options = list(dict.fromkeys(str(o).strip() for o in opts if str(o).strip()))[:4]
+        if say:
+            return {"say": say, "options": options, "ready": bool(data.get("ready")), "raw": raw}
+    return {"say": raw, "options": [], "ready": False, "raw": raw}
+
+
 class Scriptwriter:
     def __init__(self, chat: ChatFn):
         self._chat = chat
 
-    def reply(self, history: list[dict]) -> str:
+    def reply(self, history: list[dict]) -> dict:
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
-        return self._chat(messages, json_mode=False)
+        return _parse_reply(self._chat(messages, json_mode=True))
 
     def draft(self, history: list[dict]) -> Pack:
         messages = [

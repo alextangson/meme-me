@@ -782,14 +782,19 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "对话不存在，刷新页面重新开始")
         history.append({"role": "user", "content": message})
         try:
-            reply = _make_scriptwriter().reply(history)
+            out = _make_scriptwriter().reply(history)
         except Exception as e:
             history.pop()
             _log_server_error("agent_chat", e, draft_id=draft_id)
             raise HTTPException(502, f"策划暂时掉线了：{e}")
-        history.append({"role": "assistant", "content": reply})
+        history.append({"role": "assistant", "content": out["raw"]})
         _persist_draft(draft_id, history)
-        return {"draft_id": draft_id, "reply": reply}
+        return {
+            "draft_id": draft_id,
+            "reply": out["say"],
+            "options": out["options"],
+            "ready": out["ready"],
+        }
 
     @app.post("/api/agent/draft")
     def agent_draft(draft_id: str = Form(...)) -> dict:

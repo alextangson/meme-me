@@ -29,14 +29,43 @@ class FakeChat:
         return self.responses.pop(0)
 
 
-def test_reply_appends_system_prompt():
-    chat = FakeChat(["想给谁做表情包呀？"])
+def test_reply_parses_structured_reply():
+    raw = json.dumps(
+        {"say": "想给谁做表情包呀？", "options": ["自用斗图", "发给对象"], "ready": False},
+        ensure_ascii=False,
+    )
+    chat = FakeChat([raw])
     sw = Scriptwriter(chat)
     out = sw.reply([{"role": "user", "content": "我想定制"}])
-    assert out == "想给谁做表情包呀？"
+    assert out["say"] == "想给谁做表情包呀？"
+    assert out["options"] == ["自用斗图", "发给对象"]
+    assert out["ready"] is False
+    assert out["raw"] == raw  # 原文进历史，模型下一轮看得到自己给过的选项
     messages, json_mode = chat.calls[0]
     assert messages[0]["role"] == "system"
-    assert json_mode is False
+    assert json_mode is True
+
+
+def test_reply_falls_back_to_plain_text_on_bad_json():
+    # 模型没按格式来：当纯文本聊，绝不让格式问题挡住对话
+    out = Scriptwriter(FakeChat(["想给谁做表情包呀？"])).reply(
+        [{"role": "user", "content": "hi"}]
+    )
+    assert out == {
+        "say": "想给谁做表情包呀？", "options": [], "ready": False,
+        "raw": "想给谁做表情包呀？",
+    }
+
+
+def test_reply_sanitizes_options():
+    # 超 4 个截断、去重去空白；ready 透传
+    raw = json.dumps(
+        {"say": "挑一个", "options": ["A", "A", " ", "B", "C", "D", "E"], "ready": True},
+        ensure_ascii=False,
+    )
+    out = Scriptwriter(FakeChat([raw])).reply([{"role": "user", "content": "hi"}])
+    assert out["options"] == ["A", "B", "C", "D"]
+    assert out["ready"] is True
 
 
 def test_draft_returns_validated_pack_with_injected_style():

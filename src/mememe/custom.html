@@ -44,6 +44,13 @@
   .bub.ai code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
   @keyframes blink { 50% { opacity: .45; } }
 
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; align-self: flex-start; max-width: 92%; padding: 2px 0 4px; }
+  .chips button { border: 1.5px solid #E0BE6B; background: #FFFDF6; border-radius: 999px;
+                  padding: 8px 14px; font-size: 13px; font-weight: 700; color: var(--ink-2);
+                  cursor: pointer; transition: .12s; }
+  .chips button:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+  .chips button.go { background: var(--accent); border-color: var(--ink); color: #fff; }
+
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .search { width: 100%; border: 2px solid var(--line); border-radius: 11px; padding: 10px 12px; font-size: 14px; background: #FFFDF6; outline: none; }
   .search:focus { border-color: var(--accent); }
@@ -243,10 +250,13 @@ function setBub(div, text, cls) {
   else div.textContent = text;
 }
 
-async function agentSend() {
-  const text = $('agentInput').value.trim();
+// preset 传字符串=点选项 chip；不传=读输入框（onclick 事件对象也走这条路）
+async function agentSend(preset) {
+  const fromChip = typeof preset === 'string';
+  const text = (fromChip ? preset : $('agentInput').value).trim();
   if (!text) return;
-  $('agentInput').value = '';
+  clearChips();  // 旧选项随新消息作废
+  if (!fromChip) $('agentInput').value = '';
   bubble(text, 'me');
   const busy = bubble('策划思考中…', 'ai busy');
   $('agentSend').disabled = true;
@@ -260,6 +270,7 @@ async function agentSend() {
     agentDraftId = data.draft_id;
     busy.className = 'bub ai';
     setBub(busy, data.reply, 'ai');
+    renderChips(data.options || [], !!data.ready);
   } catch (e) {
     busy.className = 'bub ai';
     busy.textContent = e.name === 'AbortError'
@@ -267,6 +278,33 @@ async function agentSend() {
       : '出错了：' + (e.message || e);
   }
   $('agentSend').disabled = false;
+}
+
+function clearChips() {
+  document.querySelectorAll('.chips').forEach(e => e.remove());
+}
+
+// 选择题卡：AI 的问题带可点选项，点一下=回答；ready 时再给一颗直达「出方案」的主按钮
+function renderChips(options, ready) {
+  if (!options.length && !ready) return;
+  const box = $('chatbox');
+  const div = document.createElement('div');
+  div.className = 'chips';
+  options.forEach(o => {
+    const b = document.createElement('button');
+    b.textContent = o;
+    b.onclick = () => agentSend(o);
+    div.appendChild(b);
+  });
+  if (ready) {
+    const b = document.createElement('button');
+    b.className = 'go';
+    b.textContent = '✨ 出方案给我看';
+    b.onclick = agentMakeDraft;
+    div.appendChild(b);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
 }
 
 // 带超时+实时计时的请求：永不让用户对着不动的气泡干等
@@ -287,6 +325,7 @@ async function fetchWithProgress(url, fd, busy, label, timeoutMs) {
 
 async function agentMakeDraft() {
   if (!agentDraftId) { bubble('先说说你的需求，聊一两句我才好出方案～', 'ai'); return; }
+  clearChips();
   const busy = bubble('正在设计这套表情，约 20–40 秒…', 'ai busy');
   $('agentDraft').disabled = true;
   const fd = new FormData();

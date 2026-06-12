@@ -516,7 +516,7 @@ def test_unknown_pack_preview_404(client):
 def agent_client(client, tmp_path, monkeypatch):
     import json as _json
 
-    from mememe.core.scriptwriter import Scriptwriter
+    from mememe.core.scriptwriter import DRAFT_INSTRUCTION, Scriptwriter
 
     draft = {
         "id": "dingzhi",
@@ -532,9 +532,13 @@ def agent_client(client, tmp_path, monkeypatch):
     }
 
     def fake_chat(messages, *, json_mode=False):
-        if json_mode:
+        # 聊天和出稿现在都是 json_mode——按末条消息是不是出稿指令分流
+        if DRAFT_INSTRUCTION in messages[-1]["content"]:
             return _json.dumps(draft, ensure_ascii=False)
-        return "想给谁做表情包呀？"
+        return _json.dumps(
+            {"say": "想给谁做表情包呀？", "options": ["自用斗图", "发给对象"], "ready": False},
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(webapp, "_make_scriptwriter", lambda: Scriptwriter(fake_chat))
     monkeypatch.setattr(webapp, "CUSTOM_PACKS_DIR", tmp_path / "custom")
@@ -551,6 +555,13 @@ def test_agent_chat_keeps_history(agent_client):
         "/api/agent/chat", data={"message": "给对象用", "draft_id": draft_id}
     )
     assert r2.json()["draft_id"] == draft_id
+
+
+def test_agent_chat_returns_quick_options(agent_client):
+    # 选择题卡：问题带可点选项，前端渲染 chips，点一下=回答
+    data = agent_client.post("/api/agent/chat", data={"message": "我想定制"}).json()
+    assert data["options"] == ["自用斗图", "发给对象"]
+    assert data["ready"] is False
 
 
 def test_agent_draft_creates_custom_pack_private_to_creator(agent_client):

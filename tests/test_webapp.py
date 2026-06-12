@@ -33,10 +33,26 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(webapp, "_make_provider", factory)
     monkeypatch.setattr(webapp, "OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(webapp, "DEVICES_DIR", tmp_path / "devices")
+    monkeypatch.setattr(webapp, "CODES_FILE", tmp_path / "codes.json")
     c = TestClient(webapp.create_app())
     c.fake_provider = provider
     c.provider_calls = provider_calls
     return c
+
+
+DEV = "devtest12345678"  # 合法设备 id（8-64 位字母数字）
+
+
+def _entitle(plan: str = "unlocked", device: str = DEV) -> str:
+    """直接对同一份账本文件发码并兑换——等价于走 /api/admin/codes + /api/redeem。"""
+    from mememe import entitlements
+
+    store = entitlements.Store(webapp.DEVICES_DIR, webapp.CODES_FILE)
+    code = store.create_codes(plan, 1)[0]
+    ok, _ = store.redeem(code, device)
+    assert ok
+    return device
 
 
 def _selfie_bytes() -> bytes:
@@ -166,8 +182,8 @@ def test_animate_single_sticker(client, monkeypatch):
     job_id = resp.json()["job_id"]
     _wait_done(client, job_id)
 
-    resp = client.post(f"/api/jobs/{job_id}/animate/2")
-    assert resp.status_code == 200
+    resp = client.post(f"/api/jobs/{job_id}/animate/2", data={"device": DEV})
+    assert resp.status_code == 200  # 免费层自带 1 条视频尝鲜额度
 
     import time as _t
 
@@ -567,10 +583,19 @@ def test_generate_works_with_custom_pack(agent_client):
     ).json()["draft_id"]
     agent_client.post("/api/agent/draft", data={"draft_id": draft_id})
 
+    # 定制主题是 ¥29.9 档：编剧聊天免费种草，生成要定制版权益
+    gate = agent_client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data={"pack_id": "dingzhi", "device": DEV},
+    )
+    assert gate.status_code == 402
+
+    _entitle("custom")
     resp = agent_client.post(
         "/api/generate",
         files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
-        data={"pack_id": "dingzhi"},
+        data={"pack_id": "dingzhi", "device": DEV},
     )
     assert resp.status_code == 200
     job = _wait_done(agent_client, resp.json()["job_id"])
@@ -591,7 +616,7 @@ def test_animate_with_custom_motion(client, monkeypatch):
     job_id = _animated_job(client)
     resp = client.post(
         f"/api/jobs/{job_id}/animate/1",
-        data={"mode": "video", "motion": "举着咖啡杯慢动作干杯"},
+        data={"mode": "video", "motion": "举着咖啡杯慢动作干杯", "device": DEV},
     )
     assert resp.status_code == 200
     _wait_anim(client, job_id, 0)
@@ -636,7 +661,7 @@ def test_generate_snapshots_pack_into_job_dir(agent_client, tmp_path):
     resp = agent_client.post(
         "/api/generate",
         files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
-        data={"pack_id": "dingzhi"},
+        data={"pack_id": "dingzhi", "device": _entitle("custom")},
     )
     job_id = resp.json()["job_id"]
     _wait_done(agent_client, job_id)
@@ -657,7 +682,7 @@ def test_custom_pack_job_animates_after_pack_file_lost(agent_client, tmp_path):
     resp = agent_client.post(
         "/api/generate",
         files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
-        data={"pack_id": "dingzhi"},
+        data={"pack_id": "dingzhi", "device": _entitle("custom")},
     )
     job_id = resp.json()["job_id"]
     _wait_done(agent_client, job_id)
@@ -759,7 +784,10 @@ def test_platform_pack_download(client):
 
 def test_extend_generates_remaining_eight(client):
     job_id = _animated_job(client)  # free tier: 8 done
-    resp = client.post(f"/api/jobs/{job_id}/extend")
+    # 全套 16 是 ¥9.9 档权益：免费设备 402，兑换后放行
+    assert client.post(f"/api/jobs/{job_id}/extend", data={"device": DEV}).status_code == 402
+    _entitle("unlocked")
+    resp = client.post(f"/api/jobs/{job_id}/extend", data={"device": DEV})
     assert resp.status_code == 200
     deadline = time.time() + 10
     while time.time() < deadline:
@@ -772,13 +800,14 @@ def test_extend_generates_remaining_eight(client):
     assert job["images"][8]["caption"]  # 第 9 个梗有文案
 
     # 已是全套则拒绝
-    assert client.post(f"/api/jobs/{job_id}/extend").status_code == 409
+    assert client.post(f"/api/jobs/{job_id}/extend", data={"device": DEV}).status_code == 409
 
 
 def test_extend_blocked_without_selfie(client):
     job_id = _animated_job(client)
+    _entitle("unlocked")  # 账本落盘，重启后权益仍在
     fresh = TestClient(webapp.create_app())
-    assert fresh.post(f"/api/jobs/{job_id}/extend").status_code == 409
+    assert fresh.post(f"/api/jobs/{job_id}/extend", data={"device": DEV}).status_code == 409
 
 
 def test_custom_page_served(client):
@@ -874,8 +903,9 @@ def test_video_animations_queue_through_slots(client, monkeypatch):
 
     monkeypatch.setattr(webapp, "_make_video_provider", lambda: SlowVideo())
     job_id = _animated_job(client)
-    assert client.post(f"/api/jobs/{job_id}/animate/1", data={"mode": "video"}).status_code == 200
-    assert client.post(f"/api/jobs/{job_id}/animate/2", data={"mode": "video"}).status_code == 200
+    dev2 = "devtest87654321"  # 两台设备各用自己的免费尝鲜额度
+    assert client.post(f"/api/jobs/{job_id}/animate/1", data={"mode": "video", "device": DEV}).status_code == 200
+    assert client.post(f"/api/jobs/{job_id}/animate/2", data={"mode": "video", "device": dev2}).status_code == 200
     time.sleep(0.4)
     assert len(started) == 1  # 第二个在信号量上排队，没并发打上游
     gate.set()
@@ -896,3 +926,136 @@ def test_drafts_survive_restart(agent_client, tmp_path, monkeypatch):
     resp = fresh.post("/api/agent/draft", data={"draft_id": draft_id})
     assert resp.status_code == 200, resp.text
     assert resp.json()["pack_id"]
+
+
+# ---- 定价与裂变（docs/specs/2026-06-12-pricing-growth.md 的执行层） ----
+
+
+def _gen(client, device=DEV, ref="", pack="shechu"):
+    data = {"pack_id": pack, "device": device}
+    if ref:
+        data["ref"] = ref
+    return client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data=data,
+    )
+
+
+def test_free_tier_daily_generation_limit(client, monkeypatch):
+    from mememe import entitlements
+
+    monkeypatch.setattr(entitlements, "FREE_DAILY", 2)
+    # 等每套跑完再发下一套——别占着并发槽位影响后续测试
+    _wait_done(client, _gen(client).json()["job_id"])
+    _wait_done(client, _gen(client).json()["job_id"])
+    resp = _gen(client)
+    assert resp.status_code == 402  # 第三套撞免费日限 → 付费墙
+    assert "免费生成" in resp.json()["detail"]
+    # 解锁后日限放宽，继续生成
+    _entitle("unlocked")
+    _wait_done(client, _gen(client).json()["job_id"])
+
+
+def test_video_credit_burns_then_gates(client, monkeypatch):
+    class FakeVideo:
+        def animate(self, prompt, image, **kw):
+            return b"MP4"
+
+    monkeypatch.setattr(webapp, "_make_video_provider", lambda: FakeVideo())
+    monkeypatch.setattr(webapp, "mp4_to_wechat_gif", lambda mp4, **kw: _tiny_gif())
+    job_id = _animated_job(client)
+
+    me = client.get("/api/me", params={"device": DEV}).json()
+    assert me["video_credits"] == 1  # 免费尝鲜 1 条
+    assert client.post(
+        f"/api/jobs/{job_id}/animate/1", data={"mode": "video", "device": DEV}
+    ).status_code == 200
+    _wait_anim(client, job_id, 0)
+    resp = client.post(
+        f"/api/jobs/{job_id}/animate/2", data={"mode": "video", "device": DEV}
+    )
+    assert resp.status_code == 402  # 额度烧完 → 付费墙
+    # 抖一抖永远免费，不受额度影响
+    assert client.post(
+        f"/api/jobs/{job_id}/animate/2", data={"mode": "shake", "device": DEV}
+    ).status_code == 200
+
+
+def test_video_credit_refunded_on_failure(client, monkeypatch):
+    class BrokenVideo:
+        def animate(self, prompt, image, **kw):
+            raise RuntimeError("ark 超时")
+
+    monkeypatch.setattr(webapp, "_make_video_provider", lambda: BrokenVideo())
+    job_id = _animated_job(client)
+    assert client.post(
+        f"/api/jobs/{job_id}/animate/1", data={"mode": "video", "device": DEV}
+    ).status_code == 200
+    _wait_anim(client, job_id, 0)
+    me = client.get("/api/me", params={"device": DEV}).json()
+    assert me["video_credits"] == 1  # 生成失败不烧用户额度
+
+
+def test_redeem_flow_via_api(client, monkeypatch):
+    monkeypatch.setattr(webapp, "ADMIN_KEY", "k")
+    resp = client.post(
+        "/api/admin/codes", params={"key": "k"}, data={"plan": "unlocked", "n": 2}
+    )
+    assert resp.status_code == 200
+    codes = resp.json()["codes"]
+    assert len(codes) == 2 and all(c.startswith("MP-") for c in codes)
+
+    r = client.post("/api/redeem", data={"code": codes[0], "device": DEV})
+    assert r.status_code == 200
+    me = r.json()
+    assert me["plan"] == "unlocked"
+    assert me["video_credits"] == 1 + 6  # 免费尝鲜 + 解锁附赠
+
+    # 同码二次兑换被拒；瞎编的码也被拒
+    assert client.post(
+        "/api/redeem", data={"code": codes[0], "device": "devtest87654321"}
+    ).status_code == 400
+    assert client.post(
+        "/api/redeem", data={"code": "MP-NOPENOPE", "device": DEV}
+    ).status_code == 400
+
+
+def test_referral_rewards_inviter_on_first_success(client):
+    inviter = "devtestinviter1"
+    newbie = "devtestnewbie12"
+    r = _gen(client, device=newbie, ref=inviter)
+    assert r.status_code == 200
+    _wait_done(client, r.json()["job_id"])
+    # 结算在生成线程收尾时发生，轮询等它落账
+    deadline = time.time() + 10
+    me = {}
+    while time.time() < deadline:
+        me = client.get("/api/me", params={"device": inviter}).json()
+        if me["video_credits"] > 1:
+            break
+        time.sleep(0.05)
+    assert me["video_credits"] == 1 + 2  # 尝鲜 1 + 邀请奖励 2
+    # 同一个被邀设备再生成不重复发奖
+    r2 = _gen(client, device=newbie)
+    _wait_done(client, r2.json()["job_id"])
+    time.sleep(0.3)
+    me = client.get("/api/me", params={"device": inviter}).json()
+    assert me["video_credits"] == 3
+
+
+def test_me_exposes_pay_channel(client, monkeypatch):
+    monkeypatch.setattr(webapp, "PAY_URL", "https://afdian.example/memeplanet")
+    me = client.get("/api/me", params={"device": DEV}).json()
+    assert me["pay_url"] == "https://afdian.example/memeplanet"
+    assert me["plan"] == "free"
+    assert me["daily_remaining"] > 0
+
+
+def test_admin_data_includes_monetize_summary(client, monkeypatch):
+    monkeypatch.setattr(webapp, "ADMIN_KEY", "k")
+    client.post("/api/admin/codes", params={"key": "k"}, data={"plan": "unlocked", "n": 3})
+    _entitle("unlocked")
+    data = client.get("/api/admin/data", params={"key": "k"}).json()
+    assert data["monetize"]["codes"]["unlocked"]["total"] == 4  # 3 + _entitle 发的 1
+    assert data["monetize"]["devices"]["paid"] == 1

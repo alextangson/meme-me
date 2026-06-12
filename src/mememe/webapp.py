@@ -37,12 +37,17 @@ from mememe.core.postprocess import (
 )
 from mememe.core.schema import Pack, load_pack
 from mememe.providers.base import ImageProvider
+from mememe import entitlements
 
 logger = logging.getLogger("mememe.webapp")
 
 OUTPUT_ROOT = Path("out/web")
 LEADS_FILE = Path("out/leads.jsonl")
 EVENTS_FILE = Path("out/events.jsonl")  # 转化漏斗埋点（unlock_shown/unlock_free_click）
+DEVICES_DIR = Path("out/devices")  # 设备权益账本（定价/裂变的执行层）
+CODES_FILE = Path("out/codes.json")  # 兑换码：人工收款过渡期的变现通道
+# 收款入口（爱发电/收款页链接）；没配就引导加微信（contact-qr）
+PAY_URL = os.environ.get("MEMEME_PAY_URL", "")
 DRAFTS_DIR = Path("out/drafts")  # AI 编剧对话落盘——部署重启不丢用户聊到一半的需求
 # B 端联系入口：放一张微信二维码图在这就会出现在 /custom 页（个人数据，不进 repo）
 CONTACT_QR_FILE = Path(os.environ.get("MEMEME_CONTACT_QR", "out/contact-qr.png"))
@@ -61,22 +66,27 @@ GEN_FANOUT = int(os.environ.get("MEMEME_GEN_FANOUT", "4"))  # 单任务内并发
 _VIDEO_SLOTS = threading.Semaphore(int(os.environ.get("MEMEME_VIDEO_CONCURRENT", "2")))
 
 
-def _log_server_error(scope: str, exc: Exception, **ctx) -> None:
-    """后端异常双写：journalctl 拿完整堆栈，events.jsonl 给 /admin 排查。"""
-    logger.error("%s failed %s", scope, ctx, exc_info=exc)
-    row = {
-        "name": "server_error",
-        "scope": scope,
-        "detail": f"{type(exc).__name__}: {exc}"[:500],
-        "ts": time.time(),
-        **ctx,
-    }
+def _log_event(name: str, **ctx) -> None:
+    """后端业务事件（付费墙/兑换/裂变奖励）与前端埋点落同一条 events.jsonl，
+    /admin 漏斗直接可见——定价迭代就看这些数字。"""
+    row = {"name": name, "ts": time.time(), **ctx}
     try:
         EVENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with EVENTS_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         pass
+
+
+def _log_server_error(scope: str, exc: Exception, **ctx) -> None:
+    """后端异常双写：journalctl 拿完整堆栈，events.jsonl 给 /admin 排查。"""
+    logger.error("%s failed %s", scope, ctx, exc_info=exc)
+    _log_event(
+        "server_error",
+        scope=scope,
+        detail=f"{type(exc).__name__}: {exc}"[:500],
+        **ctx,
+    )
 
 
 def _make_scriptwriter():
@@ -163,6 +173,7 @@ class Job:
     provider_name: str = ""
     style: str = ""
     caption_style: str = ""
+    device: str = ""  # 发起生成的设备——裂变归因与额度结算的主体
     status: str = "running"
     error: str = ""
     images: list[dict] = field(default_factory=list)
@@ -191,6 +202,7 @@ def _save_meta(job: Job) -> None:
             "provider_name": job.provider_name,
             "style": job.style,
             "caption_style": job.caption_style,
+            "device": job.device,
             "status": job.status,
             "error": job.error,
             "created_at": job.created_at,
@@ -264,6 +276,7 @@ def _load_jobs() -> dict[str, Job]:
             provider_name=meta.get("provider_name", ""),
             style=meta.get("style", ""),
             caption_style=meta.get("caption_style", ""),
+            device=meta.get("device", ""),
             status=status,
             error=meta.get("error", ""),
             images=images,
@@ -387,7 +400,12 @@ def _make_anim_gif(
 
 
 def _run_animate(
-    job: Job, provider, index: int, mode: str, motion: str | None = None
+    job: Job,
+    provider,
+    index: int,
+    mode: str,
+    motion: str | None = None,
+    on_fail=None,
 ) -> None:
     pos = index - 1
     holds_slot = mode == "video"
@@ -406,6 +424,8 @@ def _run_animate(
             job.images[pos]["anim_error"] = str(e)[:200]
         job.error = str(e)
         _log_server_error("animate", e, job_id=job.id, index=index, mode=mode)
+        if on_fail:
+            on_fail()  # 生成失败不烧用户的视频额度
     finally:
         if holds_slot:
             _VIDEO_SLOTS.release()
@@ -462,7 +482,7 @@ def _read_jsonl(path: Path, limit: int | None = None) -> list[dict]:
     return rows[-limit:] if limit else rows
 
 
-def _admin_data(jobs: dict[str, "Job"]) -> dict:
+def _admin_data(jobs: dict[str, "Job"], store: entitlements.Store) -> dict:
     events = _read_jsonl(EVENTS_FILE)
     funnel: dict[str, int] = {}
     errors = []
@@ -496,6 +516,7 @@ def _admin_data(jobs: dict[str, "Job"]) -> dict:
         "funnel": funnel,
         "errors": sorted(errors, key=lambda x: x["ts"], reverse=True)[:50],
         "jobs": {"total": len(jobs), "by_status": by_status, "by_pack": by_pack, "recent": recent},
+        "monetize": store.summary(),  # 兑换码库存 + 设备/付费设备数
     }
 
 
@@ -516,6 +537,7 @@ def _job_json(job: Job) -> dict:
 def create_app() -> FastAPI:
     app = FastAPI(title="mememe")
     jobs: dict[str, Job] = _load_jobs()
+    store = entitlements.Store(DEVICES_DIR, CODES_FILE)
 
     # no-cache：否则浏览器启发式缓存让改版后的页面迟迟到不了用户手里
     @app.get("/", response_class=HTMLResponse)
@@ -578,7 +600,7 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "not found")
         if not hmac.compare_digest(key, ADMIN_KEY):
             raise HTTPException(403, "forbidden")
-        return _admin_data(jobs)
+        return _admin_data(jobs, store)
 
     @app.get("/api/packs")
     def list_packs() -> list[dict]:
@@ -715,6 +737,47 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "not found")
         return FileResponse(CONTACT_QR_FILE, media_type="image/png")
 
+    @app.get("/api/me")
+    def me(device: str = "") -> dict:
+        """付费墙渲染数据：我的权益 + 站点收款入口。"""
+        info = {
+            "pay_url": PAY_URL,
+            "has_contact_qr": CONTACT_QR_FILE.exists(),
+            "plan": "free",
+            "video_credits": 0,
+            "daily_remaining": 0,
+            "referral_earned": 0,
+        }
+        if entitlements.valid_device(device):
+            info.update(store.snapshot(device))
+        return info
+
+    @app.post("/api/redeem")
+    def redeem(code: str = Form(...), device: str = Form(...)) -> dict:
+        if not entitlements.valid_device(device):
+            raise HTTPException(422, "设备标识无效，刷新页面再试")
+        ok, result = store.redeem(code.strip().upper(), device)
+        if not ok:
+            _log_event("redeem_bad", device=device, detail=result)
+            raise HTTPException(400, result)
+        _log_event("redeem_ok", device=device, plan=result)
+        return {"plan": result, **store.snapshot(device)}
+
+    @app.post("/api/admin/codes")
+    def admin_codes(
+        key: str = "", plan: str = Form("unlocked"), n: int = Form(1)
+    ) -> dict:
+        """主理人发码：收款确认后在 /admin 生成，微信发给买家。"""
+        if not ADMIN_KEY:
+            raise HTTPException(404, "not found")
+        if not hmac.compare_digest(key, ADMIN_KEY):
+            raise HTTPException(403, "forbidden")
+        try:
+            codes = store.create_codes(plan, max(1, min(n, 50)))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return {"codes": codes, "plan": plan}
+
     @app.get("/api/pack-preview/{pack_id}")
     def pack_preview(pack_id: str) -> FileResponse:
         if "/" in pack_id or ".." in pack_id:
@@ -733,10 +796,19 @@ def create_app() -> FastAPI:
         provider: str = Form(""),
         style: str = Form(""),
         caption_style: str = Form(""),
+        device: str = Form(""),
+        ref: str = Form(""),
     ) -> dict:
         pack_path = _find_pack_path(pack_id)
         if pack_path is None:
             raise HTTPException(404, f"pack not found: {pack_id}")
+        # 专属定制主题是 ¥29.9 档：编剧聊天免费（种草），生成要定制版权益
+        if pack_path.parent == CUSTOM_PACKS_DIR and (
+            not entitlements.valid_device(device)
+            or store.plan(device) != "custom"
+        ):
+            _log_event("custom_gate", device=device, pack_id=pack_id)
+            raise HTTPException(402, "专属定制主题需要定制版兑换码才能生成")
         raw_upload = selfie.file.read(MAX_UPLOAD_BYTES + 1)
         if len(raw_upload) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "照片太大了，请压缩到 12MB 以内再试")
@@ -747,6 +819,18 @@ def create_app() -> FastAPI:
         # 名额满了就婉拒，别让并发把 1G 小机撑爆
         if not _GEN_SLOTS.acquire(blocking=False):
             raise HTTPException(429, "正在帮前面的小伙伴生成，请过一会儿再试～")
+        # 每日套数限额：防"无限换画风"烧穿预算；网页端必带 device，
+        # 不带的（curl/旧端）不限——硬护栏始终是上面的全局并发
+        if entitlements.valid_device(device):
+            allowed, msg = store.charge_generation(
+                device, ref if entitlements.valid_device(ref) else ""
+            )
+            if not allowed:
+                _GEN_SLOTS.release()
+                _log_event("daily_gate", device=device)
+                raise HTTPException(402, msg)
+        else:
+            device = ""
         pack = load_pack(pack_path)
         job_id = uuid.uuid4().hex[:12]
         out_dir = OUTPUT_ROOT / job_id
@@ -764,6 +848,7 @@ def create_app() -> FastAPI:
             pack_name=pack.name,
             created_at=time.time(),
             provider_name=provider,
+            device=device,
         )
         job.images = [
             {
@@ -786,6 +871,17 @@ def create_app() -> FastAPI:
                 _run_generation(job, _make_provider(provider))
             finally:
                 _GEN_SLOTS.release()
+            if not job.device:
+                return
+            if job.status == "done":
+                referrer = store.note_job_done(job.device)
+                if referrer:  # 被邀的人首套出图，邀请人立得视频额度
+                    _log_event(
+                        "referral_reward",
+                        device=referrer, from_device=job.device, job_id=job.id,
+                    )
+            else:
+                store.refund_generation(job.device)  # 整套全失败不扣当日额度
 
         threading.Thread(target=_run_and_release, daemon=True).start()
         return {"job_id": job_id}
@@ -854,6 +950,7 @@ def create_app() -> FastAPI:
         index: int,
         mode: str = Form("video"),
         motion: str = Form(""),
+        device: str = Form(""),
     ) -> dict:
         job = jobs.get(job_id)
         if job is None:
@@ -870,11 +967,26 @@ def create_app() -> FastAPI:
                 raise HTTPException(
                     409, "这个历史任务没有保存原图，拼帧和视频做不了，只能用「抖一抖」"
                 )
+        # 视频一条 ≈¥0.5，是全站成本大头——按条扣额度；抖一抖/拼帧不限
+        on_fail = None
+        if mode == "video":
+            if not entitlements.valid_device(device):
+                raise HTTPException(402, "设备标识缺失，刷新页面后再试")
+            if not store.charge_video(device):
+                _log_event("video_gate", device=device, job_id=job_id)
+                raise HTTPException(
+                    402, "视频动图额度用完啦——解锁可得更多，邀请好友也能免费拿"
+                )
+            on_fail = lambda d=device: store.refund_video(d)  # noqa: E731
         with job.lock:
             img = job.images[index - 1]
             if img["status"] != "done":
+                if on_fail:
+                    on_fail()
                 raise HTTPException(409, "sticker not ready")
             if img["anim_status"] == "running":
+                if on_fail:
+                    on_fail()
                 raise HTTPException(409, "already animating")
             img["anim_status"] = "running"
         if mode == "video":
@@ -885,7 +997,7 @@ def create_app() -> FastAPI:
             provider = None
         threading.Thread(
             target=_run_animate,
-            args=(job, provider, index, mode, motion.strip() or None),
+            args=(job, provider, index, mode, motion.strip() or None, on_fail),
             daemon=True,
         ).start()
         return {"job_id": job_id}
@@ -915,10 +1027,14 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/api/jobs/{job_id}/extend")
-    def extend(job_id: str) -> dict:
+    def extend(job_id: str, device: str = Form("")) -> dict:
         job = jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "job not found")
+        # 全套 16 张是 ¥9.9 档的核心权益——免费层到此为止
+        if not entitlements.valid_device(device) or store.plan(device) == "free":
+            _log_event("extend_gate", device=device, job_id=job_id)
+            raise HTTPException(402, "解锁全套需要兑换码——点「解锁全套」按指引获取")
         if not job.selfie or job.pack is None:
             raise HTTPException(409, "原始照片已按隐私策略删除，重新生成一套即可直接选全套")
         if job.status == "running":

@@ -30,6 +30,10 @@
   .gate button { background:var(--accent); color:#fff; border:0; border-radius:10px; padding:10px 20px; font-weight:700; cursor:pointer; }
   .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; margin-top:4px; }
   .bar i { display:block; height:100%; background:var(--accent); }
+  .mint { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  .mint select, .mint input { padding:6px 8px; border:1.5px solid var(--line); border-radius:8px; font-size:13px; }
+  .mint button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 14px; font-weight:700; cursor:pointer; }
+  #codeOut { font-family:ui-monospace,Menlo,monospace; font-size:12.5px; word-break:break-all; }
 </style>
 </head>
 <body>
@@ -49,6 +53,21 @@
   <section>
     <h2>转化漏斗</h2>
     <div id="funnel"></div>
+  </section>
+
+  <section>
+    <h2>变现 · 兑换码</h2>
+    <div class="cards" id="moneyCards"></div>
+    <div class="mint">
+      <select id="codePlan">
+        <option value="unlocked">¥9.9 全套放开</option>
+        <option value="custom">¥29.9 专属定制</option>
+      </select>
+      <input id="codeN" type="number" value="1" min="1" max="50" style="width:64px">
+      <button id="codeBtn">生成兑换码</button>
+      <span class="muted">收款确认后点这里发码，微信发给买家</span>
+    </div>
+    <p id="codeOut"></p>
   </section>
 
   <section>
@@ -92,14 +111,28 @@ function render(d) {
   $('dash').style.display = 'block';
   $('updated').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
 
-  const shown = d.funnel.unlock_shown || 0, clicked = d.funnel.unlock_free_click || 0;
-  const rate = shown ? Math.round(clicked / shown * 100) : 0;
+  const shown = d.funnel.unlock_shown || 0, pay = d.funnel.pay_click || 0;
+  const invite = d.funnel.invite_copy || 0, redeemed = d.funnel.redeem_ok || 0;
+  const rate = shown ? Math.round(pay / shown * 100) : 0;
   $('cards').innerHTML = `
     <div class="stat"><b>${d.jobs.total}</b><span>总任务</span></div>
     <div class="stat"><b class="accent">${d.jobs.by_status.done || 0}</b><span>完成</span></div>
     <div class="stat"><b>${d.jobs.by_status.error || 0}</b><span>失败</span></div>
     <div class="stat"><b>${d.leads.length}</b><span>B端线索</span></div>
-    <div class="stat"><b class="accent">${rate}%</b><span>解锁意愿 (${clicked}/${shown})</span></div>`;
+    <div class="stat"><b class="accent">${rate}%</b><span>付费墙→付款 (${pay}/${shown})</span></div>
+    <div class="stat"><b>${invite}</b><span>邀请链接复制</span></div>
+    <div class="stat"><b class="accent">${redeemed}</b><span>兑换成功</span></div>`;
+
+  const m = d.monetize || { codes: {}, devices: { total: 0, paid: 0 } };
+  const cu = m.codes.unlocked || { total: 0, used: 0 };
+  const cc = m.codes.custom || { total: 0, used: 0 };
+  const revenue = (cu.used * 9.9 + cc.used * 29.9).toFixed(1);
+  $('moneyCards').innerHTML = `
+    <div class="stat"><b class="accent">¥${revenue}</b><span>累计收入（按已用码）</span></div>
+    <div class="stat"><b>${m.devices.total}</b><span>设备数</span></div>
+    <div class="stat"><b class="accent">${m.devices.paid}</b><span>已付费设备</span></div>
+    <div class="stat"><b>${cu.used}/${cu.total}</b><span>9.9 码 已用/已发</span></div>
+    <div class="stat"><b>${cc.used}/${cc.total}</b><span>29.9 码 已用/已发</span></div>`;
 
   const packs = Object.entries(d.jobs.by_pack).sort((a, b) => b[1] - a[1]);
   const max = packs.length ? packs[0][1] : 1;
@@ -119,6 +152,19 @@ function render(d) {
   $('errors').innerHTML = d.errors.map(e =>
     `<tr><td>${fmt(e.ts)}</td><td class="err-detail">${esc(e.detail)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">没有报错，很好</td></tr>';
 }
+
+$('codeBtn').onclick = async () => {
+  const fd = new FormData();
+  fd.append('plan', $('codePlan').value);
+  fd.append('n', $('codeN').value);
+  const key = encodeURIComponent(sessionStorage.getItem('admin_key') || '');
+  const resp = await fetch('/api/admin/codes?key=' + key, { method: 'POST', body: fd });
+  if (!resp.ok) { $('codeOut').textContent = '生成失败：' + resp.status; return; }
+  const d = await resp.json();
+  $('codeOut').textContent = d.codes.join('   ');
+  try { await navigator.clipboard.writeText(d.codes.join('\n')); $('codeOut').textContent += '（已复制）'; } catch (_) {}
+  load();
+};
 
 $('enterBtn').onclick = () => { sessionStorage.setItem('admin_key', $('keyInput').value.trim()); load(); };
 $('keyInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('enterBtn').click(); });

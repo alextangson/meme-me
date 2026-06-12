@@ -194,12 +194,20 @@
   dialog#styleDlg { width: min(92vw, 460px); }
   dialog#styleDlg::backdrop, dialog#unlockDlg::backdrop { background: rgba(26,21,5,.4); }
   dialog#styleDlg h3, dialog#unlockDlg h3 { font-size: 15px; margin-bottom: 10px; }
-  #unlockDlg .perks { list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; }
-  #unlockDlg .perks li { padding: 3px 0 3px 22px; position: relative; }
+  #unlockDlg .perks { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: var(--ink-2); }
+  #unlockDlg .perks li { padding: 2px 0 2px 20px; position: relative; }
   #unlockDlg .perks li::before { content: '✓'; position: absolute; left: 2px; font-weight: 800; color: var(--accent); }
-  #unlockDlg .price { margin: 0 0 14px; font-size: 14px; }
-  #unlockDlg .price s { color: #999; margin-right: 8px; }
-  #unlockDlg .price b { font-size: 20px; color: var(--accent); }
+  #unlockDlg .skus { display: grid; gap: 10px; margin-bottom: 12px; }
+  #unlockDlg .sku { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  #unlockDlg .sku.best { border-color: var(--ink); background: var(--hero); }
+  #unlockDlg .sku b { font-size: 19px; color: var(--accent); margin-right: 8px; }
+  #unlockDlg .sku .sname { font-weight: 700; }
+  #unlockDlg .payzone { margin-bottom: 12px; text-align: center; }
+  #unlockDlg .payzone .payqr { width: 150px; border-radius: 10px; border: 2px solid var(--line); }
+  #unlockDlg .redeem { display: flex; gap: 8px; margin-bottom: 12px; }
+  #unlockDlg .redeem input { flex: 1; min-width: 0; border: 2px solid var(--line); border-radius: 10px; padding: 9px 10px; font-size: 14px; }
+  #unlockDlg .invite { border: 2.5px dashed #E0BE6B; border-radius: 12px; padding: 10px 12px; font-size: 13px; color: var(--ink-2); }
+  #unlockDlg .invite .btn { margin-top: 8px; width: 100%; }
   dialog#ask { border: 2px solid var(--ink); border-radius: var(--r); padding: 20px; width: min(92vw, 380px); }
   dialog#ask::backdrop { background: rgba(26,21,5,.4); }
   dialog#ask h3 { font-size: 15px; margin-bottom: 12px; }
@@ -265,7 +273,7 @@
     <div class="label"><span class="n">4</span>逐张揭晓</div>
     <div class="grid" id="grid"></div>
     <div class="unlock" id="unlockZone" style="display:none">
-      <div class="txt"><b>还有 8 个隐藏梗 🔓</b><br>解锁全套 16 张，集齐你的专属人设</div>
+      <div class="txt"><b>还有 8 个隐藏梗 🔓</b><br>¥9.9 解锁全套 16 张 + 6 条视频动图</div>
       <button class="btn primary" id="unlockBtn">解锁全套</button>
     </div>
     <p class="hint">每张图上有两个按钮：
@@ -345,18 +353,34 @@
   <div class="row"><button class="btn" id="styleCancel">取消</button></div>
 </dialog>
 <dialog id="unlockDlg">
-  <h3>解锁全套 16 梗 🔓</h3>
-  <ul class="perks">
-    <li>剩下 8 个隐藏梗，集齐完整人设</li>
-    <li>全套透明底 PNG + 微信 GIF 双格式</li>
-    <li>可直接上架微信表情的素材包</li>
-  </ul>
-  <div class="price"><s>¥9.9</s><b>内测限免 ¥0</b></div>
-  <div class="row">
-    <button class="btn" id="unlockCancel">再想想</button>
-    <button class="btn primary" id="unlockGo">内测期免费解锁</button>
+  <h3 id="payTitle">解锁全套 16 张 🔓</h3>
+  <div class="skus">
+    <div class="sku best"><b>¥9.9</b><span class="sname">全套放开</span>
+      <ul class="perks">
+        <li>全套 16 张，集齐完整人设</li>
+        <li>所有画风随便换 · 每天 10 套</li>
+        <li>视频动图 +6 条</li>
+      </ul>
+    </div>
+    <div class="sku"><b>¥29.9</b><span class="sname">专属定制</span>
+      <ul class="perks">
+        <li>AI 编剧写你的专属主题</li>
+        <li>含「全套放开」全部权益</li>
+        <li>视频动图 +15 条</li>
+      </ul>
+    </div>
   </div>
-  <p class="privacy" style="margin-top:10px">正式版 ¥9.9 · 内测期间免费</p>
+  <div class="payzone" id="payZone"></div>
+  <div class="redeem">
+    <input id="redeemInput" type="text" placeholder="兑换码，如 MP-XXXXXXXX" autocapitalize="characters" autocomplete="off">
+    <button class="btn primary" id="redeemBtn">兑换</button>
+  </div>
+  <div class="invite">
+    <b>不想花钱？</b>邀请好友来玩——TA 首次生成成功，你立得 2 条视频动图
+    <button class="btn" id="inviteBtn">复制我的邀请链接</button>
+  </div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="unlockCancel">再想想</button></div>
+  <p class="privacy" id="creditLine" style="margin-top:8px"></p>
 </dialog>
 <dialog id="ask">
   <h3 id="askTitle"></h3>
@@ -371,6 +395,26 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let selfie = null, packId = null, jobId = null, timer = null, currentStyle = '';
+
+// ---- 设备身份：无账号体系下额度与裂变归因的主体 ----
+const DEVICE_KEY = 'mp_device';
+function deviceId() {
+  let id = localStorage.getItem(DEVICE_KEY);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '')
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
+// 邀请归因：?ref= 落地即记，首次生成成功时服务器给邀请人发视频额度
+const REF_KEY = 'mp_ref';
+{
+  const ref = new URLSearchParams(location.search).get('ref');
+  if (ref && ref !== deviceId() && !localStorage.getItem(REF_KEY)) {
+    localStorage.setItem(REF_KEY, ref);
+  }
+}
 
 // 把任何前端异常回传服务器日志——复现不了的机型问题就靠它落地
 function report(name, detail) {
@@ -542,8 +586,19 @@ $('go').onclick = async () => {
     fd.append('selfie', selfie);
     fd.append('pack_id', packId);
     if (currentStyle) fd.append('style', currentStyle);
+    fd.append('device', deviceId());
+    const ref = localStorage.getItem(REF_KEY);
+    if (ref) fd.append('ref', ref);
     const resp = await fetch('/api/generate', { method: 'POST', body: fd });
-    if (!resp.ok) { showToast(await errMessage(resp)); $('go').disabled = false; return; }
+    if (!resp.ok) {
+      showToast(await errMessage(resp));
+      if (resp.status === 402) {
+        const p = allPacks.find(x => x.id === packId);
+        openPaywall(p && p.custom ? 'custom' : 'daily');
+      }
+      $('go').disabled = false;
+      return;
+    }
     jobId = (await resp.json()).job_id;
     rememberJob(jobId);
     saveState();
@@ -682,25 +737,101 @@ async function animate(index, mode, motion) {
   const fd = new FormData();
   fd.append('mode', mode);
   if (motion) fd.append('motion', motion);
+  fd.append('device', deviceId());
   const resp = await fetch(`/api/jobs/${jobId}/animate/${index}`, { method: 'POST', body: fd });
-  if (!resp.ok) { showToast((await resp.json()).detail || '动图失败'); return; }
+  if (!resp.ok) {
+    showToast(await errMessage(resp));
+    if (resp.status === 402) openPaywall('video');
+    return;
+  }
   startPoll();
 }
 
-// ---- 解锁全套：先过付费意向卡（内测免费），埋点喂定价决策 ----
+// ---- 付费墙：双 SKU + 兑换码 + 邀请白嫖，埋点喂定价迭代 ----
 const track = (name) => report(name, '');  // 复用上报通道
+let payReason = '';
 
-$('unlockBtn').onclick = () => { track('unlock_shown'); $('unlockDlg').showModal(); };
-$('unlockCancel').onclick = () => $('unlockDlg').close();
-$('unlockGo').onclick = async () => {
-  track('unlock_free_click');
-  $('unlockGo').disabled = true;
-  const resp = await fetch(`/api/jobs/${jobId}/extend`, { method: 'POST' });
-  $('unlockGo').disabled = false;
-  $('unlockDlg').close();
-  if (!resp.ok) { showToast((await resp.json()).detail || '解锁失败'); return; }
+async function fetchMe() {
+  try { return await (await fetch('/api/me?device=' + deviceId())).json(); }
+  catch (_) { return { pay_url: '', has_contact_qr: false, plan: 'free', video_credits: 0, daily_remaining: 0 }; }
+}
+
+function renderPayZone(me) {
+  const z = $('payZone');
+  if (me.pay_url) {
+    z.innerHTML = `<a class="btn primary big" href="${me.pay_url}" target="_blank" rel="noopener" id="payGo">去付款，秒拿兑换码 →</a>`;
+    $('payGo').onclick = () => track('pay_click');
+  } else if (me.has_contact_qr) {
+    z.innerHTML = `<img src="/api/contact-qr" alt="联系主理人二维码" class="payqr">
+      <p class="privacy">微信扫码加主理人，付款后秒发兑换码</p>`;
+  } else {
+    z.innerHTML = '<p class="privacy">兑换码购买通道整备中——先复制邀请链接，白嫖视频动图 👇</p>';
+  }
+}
+
+async function openPaywall(reason) {
+  payReason = reason || '';
+  track('unlock_shown');
+  const titles = {
+    video: '视频动图额度用完啦', daily: '今天的免费次数用完啦',
+    extend: '解锁全套 16 张 🔓', custom: '专属定制主题已就绪 🔓',
+  };
+  $('payTitle').textContent = titles[reason] || '解锁更多玩法 🔓';
+  const me = await fetchMe();
+  renderPayZone(me);
+  $('creditLine').textContent = `我的额度：视频动图 ${me.video_credits} 条 · 今天还能生成 ${me.daily_remaining} 套`;
+  $('unlockDlg').showModal();
+}
+
+async function doExtend() {
+  const fd = new FormData();
+  fd.append('device', deviceId());
+  const resp = await fetch(`/api/jobs/${jobId}/extend`, { method: 'POST', body: fd });
+  if (!resp.ok) {
+    showToast(await errMessage(resp));
+    if (resp.status === 402) openPaywall('extend');
+    return;
+  }
   $('unlockZone').style.display = 'none';
   startPoll();
+}
+
+$('unlockBtn').onclick = async () => {
+  const me = await fetchMe();
+  if (me.plan !== 'free') { doExtend(); return; }  // 已解锁的直接生成，不再弹墙
+  openPaywall('extend');
+};
+$('unlockCancel').onclick = () => $('unlockDlg').close();
+
+$('redeemBtn').onclick = async () => {
+  const code = $('redeemInput').value.trim();
+  if (!code) { showToast('先输入兑换码'); return; }
+  $('redeemBtn').disabled = true;
+  const fd = new FormData();
+  fd.append('code', code);
+  fd.append('device', deviceId());
+  const resp = await fetch('/api/redeem', { method: 'POST', body: fd });
+  $('redeemBtn').disabled = false;
+  if (!resp.ok) { showToast(await errMessage(resp)); return; }
+  const me = await resp.json();
+  $('redeemInput').value = '';
+  $('unlockDlg').close();
+  showToast(`兑换成功！视频动图额度 ${me.video_credits} 条`);
+  // 从「解锁全套」进来的，兑换完直接把剩下 8 张跑起来
+  if (payReason === 'extend' && jobId) doExtend();
+};
+
+$('inviteBtn').onclick = async () => {
+  track('invite_copy');
+  const link = `${location.origin}/?ref=${deviceId()}`;
+  const text = `我把自己做成表情包了，超好玩，你也来：${link}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('邀请链接已复制，发给好友吧');
+  } catch (_) {
+    $('redeemInput').value = link;  // 剪贴板被拒（http/旧机型）：放进输入框手动复制
+    showToast('复制失败——链接已放进输入框，长按全选复制');
+  }
 };
 
 // ---- 换画风 ----

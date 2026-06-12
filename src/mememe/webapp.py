@@ -440,7 +440,11 @@ def _run_extend(job: Job, provider: ImageProvider) -> None:
 
 
 def _run_retry(
-    job: Job, provider: ImageProvider, index: int, caption: str | None = None
+    job: Job,
+    provider: ImageProvider,
+    index: int,
+    caption: str | None = None,
+    on_fail=None,
 ) -> None:
     pos = index - 1
     try:
@@ -465,6 +469,8 @@ def _run_retry(
         job.status = "done"
         job.error = str(e)
         _log_server_error("retry", e, job_id=job.id, index=index)
+        if on_fail:
+            on_fail()  # 重摇失败不扣用户次数
     _save_meta(job)
 
 
@@ -976,7 +982,9 @@ def create_app() -> FastAPI:
         return _job_json(job)
 
     @app.post("/api/jobs/{job_id}/retry/{index}")
-    def retry(job_id: str, index: int, caption: str = Form("")) -> dict:
+    def retry(
+        job_id: str, index: int, caption: str = Form(""), device: str = Form("")
+    ) -> dict:
         job = jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "job not found")
@@ -988,12 +996,23 @@ def create_app() -> FastAPI:
             raise HTTPException(409, "job still running")
         if not 1 <= index <= len(job.images):
             raise HTTPException(400, f"index must be 1..{len(job.images)}")
+        # 重摇=抽卡，每次都是真实出图——按日限次堵住无底洞
+        on_fail = None
+        if entitlements.valid_device(device):
+            allowed, msg = store.charge_retry(device)
+            if not allowed:
+                _log_event("retry_gate", device=device, job_id=job_id)
+                raise HTTPException(402, msg)
+            on_fail = lambda d=device: store.refund_retry(d)  # noqa: E731
         with job.lock:
             job.status = "running"
             job.images[index - 1]["status"] = "running"
         threading.Thread(
             target=_run_retry,
-            args=(job, _make_provider(job.provider_name), index, caption or None),
+            args=(
+                job, _make_provider(job.provider_name), index,
+                caption or None, on_fail,
+            ),
             daemon=True,
         ).start()
         return {"job_id": job_id}

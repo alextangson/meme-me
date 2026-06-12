@@ -1162,3 +1162,25 @@ def test_static_files_send_cache_headers(client):
 def test_gzip_enabled_for_page(client):
     resp = client.get("/", headers={"Accept-Encoding": "gzip"})
     assert resp.headers.get("content-encoding") == "gzip"
+
+
+def test_retry_daily_cap_gates_gacha(client, monkeypatch):
+    from mememe import entitlements
+
+    monkeypatch.setattr(entitlements, "FREE_RETRY_DAILY", 1)
+    job_id = _animated_job(client)
+    assert client.post(
+        f"/api/jobs/{job_id}/retry/1", data={"device": DEV}
+    ).status_code == 200
+    _wait_done(client, job_id)
+    r = client.post(f"/api/jobs/{job_id}/retry/2", data={"device": DEV})
+    assert r.status_code == 402  # 免费层抽卡到顶 → 付费墙
+    assert "重摇" in r.json()["detail"]
+    # 解锁后上限放宽，且 /api/me 暴露剩余次数
+    _entitle("unlocked")
+    assert client.post(
+        f"/api/jobs/{job_id}/retry/2", data={"device": DEV}
+    ).status_code == 200
+    _wait_done(client, job_id)
+    me = client.get("/api/me", params={"device": DEV}).json()
+    assert me["retry_remaining"] == 30 - 2

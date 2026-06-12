@@ -20,6 +20,9 @@ from pathlib import Path
 # 额度旋钮全部环境变量可调——调定价不用改代码
 FREE_DAILY = int(environ.get("MEMEME_FREE_DAILY", "3"))
 PAID_DAILY = int(environ.get("MEMEME_PAID_DAILY", "10"))
+# 单张重摇也是真实出图（抽卡的无底洞），按日限次
+FREE_RETRY_DAILY = int(environ.get("MEMEME_FREE_RETRY_DAILY", "8"))
+PAID_RETRY_DAILY = int(environ.get("MEMEME_PAID_RETRY_DAILY", "30"))
 FREE_VIDEO_CREDITS = int(environ.get("MEMEME_FREE_VIDEO_CREDITS", "1"))
 REFERRAL_REWARD = int(environ.get("MEMEME_REFERRAL_REWARD", "2"))
 REFERRAL_CAP = int(environ.get("MEMEME_REFERRAL_CAP", "10"))
@@ -88,7 +91,7 @@ class Store:
 
     def _rollover(self, rec: dict) -> None:
         if rec["daily"].get("date") != _today():
-            rec["daily"] = {"date": _today(), "count": 0}
+            rec["daily"] = {"date": _today(), "count": 0, "retries": 0}
 
     def plan(self, device: str) -> str:
         with self._lock:
@@ -99,11 +102,17 @@ class Store:
         with self._lock:
             rec = self._load(device)
             self._rollover(rec)
+            retry_limit = (
+                PAID_RETRY_DAILY if rec["plan"] != "free" else FREE_RETRY_DAILY
+            )
             return {
                 "plan": rec["plan"],
                 "video_credits": rec["video_credits"],
                 "daily_remaining": max(
                     0, self._daily_limit(rec) - rec["daily"]["count"]
+                ),
+                "retry_remaining": max(
+                    0, retry_limit - rec["daily"].get("retries", 0)
                 ),
                 "referral_earned": rec["referral_earned"],
             }
@@ -140,6 +149,33 @@ class Store:
             rec = self._load(device)
             self._rollover(rec)
             rec["daily"]["count"] = max(0, rec["daily"]["count"] - 1)
+            self._save(rec)
+
+    # ---- 重摇额度（单张重生成=抽卡，真实出图按日限次） ----
+
+    def charge_retry(self, device: str) -> tuple[bool, str]:
+        with self._lock:
+            rec = self._load(device)
+            self._rollover(rec)
+            limit = PAID_RETRY_DAILY if rec["plan"] != "free" else FREE_RETRY_DAILY
+            used = rec["daily"].get("retries", 0)
+            if used >= limit:
+                if rec["plan"] == "free":
+                    return False, (
+                        f"今天的 {limit} 次重摇用完啦——解锁后每天 "
+                        f"{PAID_RETRY_DAILY} 次，或者明天再来"
+                    )
+                return False, f"今天的 {limit} 次重摇用完啦，明天手气更好～"
+            rec["daily"]["retries"] = used + 1
+            self._save(rec)
+            return True, ""
+
+    def refund_retry(self, device: str) -> None:
+        """重摇失败不扣次数。"""
+        with self._lock:
+            rec = self._load(device)
+            self._rollover(rec)
+            rec["daily"]["retries"] = max(0, rec["daily"].get("retries", 0) - 1)
             self._save(rec)
 
     def note_job_done(self, device: str) -> str | None:

@@ -1261,3 +1261,33 @@ def test_caption_style_consistent_within_job(client):
         if "【文字样式】" in p
     }
     assert len(suffixes) == 1
+
+
+def test_vip_plan_grants_everything(agent_client):
+    # 内部 VIP：日限近乎无限 + 定制包生成权 + 大额视频额度
+    draft_id = agent_client.post(
+        "/api/agent/chat", data={"message": "随便"}
+    ).json()["draft_id"]
+    agent_client.post("/api/agent/draft", data={"draft_id": draft_id})
+
+    _entitle("vip")
+    me = agent_client.get("/api/me", params={"device": DEV}).json()
+    assert me["plan"] == "vip"
+    assert me["video_credits"] == 1 + 500
+    assert me["daily_remaining"] >= 900
+    assert me["retry_remaining"] >= 900
+    # vip ≥ custom：定制包直接生成
+    resp = agent_client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data={"pack_id": "dingzhi", "device": DEV},
+    )
+    assert resp.status_code == 200
+    # 全套 extend 也放行（vip ≥ unlocked）
+    job_id = resp.json()["job_id"]
+    _wait_done(agent_client, job_id)
+    assert agent_client.post(
+        f"/api/jobs/{job_id}/extend", data={"device": DEV}
+    ).status_code == 200
+    job = _wait_done(agent_client, job_id)
+    assert len(job["images"]) == 16

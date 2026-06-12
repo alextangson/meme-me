@@ -14,6 +14,7 @@
 """
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from mememe.core.styles import STYLES
 
 ROOT = Path(__file__).parent.parent
 PREVIEW_MEME_INDEX = 3  # shechu liekai：头肩特写，脸最大，画风差异一眼可比
+# 示例脸可换（产品决策 2026-06-12：用女生示例）；"classic" 是无画风的默认贴纸
+DEFAULT_FACE = ROOT / "out" / "demo" / "demo-face-f.png"
 
 
 def _provider_chain():
@@ -42,21 +45,24 @@ def _provider_chain():
 def main() -> None:
     args = [a for a in sys.argv[1:] if a != "--dry-run"]
     dry_run = "--dry-run" in sys.argv[1:]
-    styles = args or list(STYLES)
-    unknown = set(styles) - set(STYLES)
+    styles = args or ["classic", *STYLES]
+    unknown = set(styles) - set(STYLES) - {"classic"}
     if unknown:
         sys.exit(f"未知画风: {', '.join(sorted(unknown))}")
 
     pack = load_pack(ROOT / "packs" / "shechu.yaml")
     meme = pack.memes[PREVIEW_MEME_INDEX]
-    prompts = {sid: compile_meme(pack, meme, style=sid) for sid in styles}
+    prompts = {
+        sid: compile_meme(pack, meme, style=None if sid == "classic" else sid)
+        for sid in styles
+    }
 
     if dry_run:
         for sid, prompt in prompts.items():
             print(f"===== {sid} =====\n{prompt}\n")
         return
 
-    reference = (ROOT / "out" / "demo" / "demo-face.png").read_bytes()
+    reference = Path(os.environ.get("MEMEME_PREVIEW_FACE", DEFAULT_FACE)).read_bytes()
     rembg_on = importlib.util.find_spec("rembg") is not None
     chain = _provider_chain()
     failed = []

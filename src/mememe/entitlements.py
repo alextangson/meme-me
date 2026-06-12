@@ -23,14 +23,22 @@ PAID_DAILY = int(environ.get("MEMEME_PAID_DAILY", "10"))
 # 单张重摇也是真实出图（抽卡的无底洞），按日限次
 FREE_RETRY_DAILY = int(environ.get("MEMEME_FREE_RETRY_DAILY", "8"))
 PAID_RETRY_DAILY = int(environ.get("MEMEME_PAID_RETRY_DAILY", "30"))
+# vip = 主理人/自己人的内部档：近乎不设限，码别外发
+VIP_DAILY = int(environ.get("MEMEME_VIP_DAILY", "999"))
+VIP_RETRY_DAILY = int(environ.get("MEMEME_VIP_RETRY_DAILY", "999"))
 FREE_VIDEO_CREDITS = int(environ.get("MEMEME_FREE_VIDEO_CREDITS", "1"))
 REFERRAL_REWARD = int(environ.get("MEMEME_REFERRAL_REWARD", "2"))
 REFERRAL_CAP = int(environ.get("MEMEME_REFERRAL_CAP", "10"))
 PLAN_VIDEO_CREDITS = {
     "unlocked": int(environ.get("MEMEME_UNLOCK_VIDEO_CREDITS", "6")),
     "custom": int(environ.get("MEMEME_CUSTOM_VIDEO_CREDITS", "15")),
+    "vip": int(environ.get("MEMEME_VIP_VIDEO_CREDITS", "500")),
 }
-_PLAN_RANK = {"free": 0, "unlocked": 1, "custom": 2}
+_PLAN_RANK = {"free": 0, "unlocked": 1, "custom": 2, "vip": 3}
+
+
+def plan_rank(plan: str) -> int:
+    return _PLAN_RANK.get(plan, 0)
 
 _DEVICE_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")
 _CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # 去掉易混的 0O1IL
@@ -87,7 +95,14 @@ class Store:
         )
 
     def _daily_limit(self, rec: dict) -> int:
+        if rec["plan"] == "vip":
+            return VIP_DAILY
         return PAID_DAILY if rec["plan"] != "free" else FREE_DAILY
+
+    def _retry_limit(self, rec: dict) -> int:
+        if rec["plan"] == "vip":
+            return VIP_RETRY_DAILY
+        return PAID_RETRY_DAILY if rec["plan"] != "free" else FREE_RETRY_DAILY
 
     def _rollover(self, rec: dict) -> None:
         if rec["daily"].get("date") != _today():
@@ -102,9 +117,7 @@ class Store:
         with self._lock:
             rec = self._load(device)
             self._rollover(rec)
-            retry_limit = (
-                PAID_RETRY_DAILY if rec["plan"] != "free" else FREE_RETRY_DAILY
-            )
+            retry_limit = self._retry_limit(rec)
             return {
                 "plan": rec["plan"],
                 "video_credits": rec["video_credits"],
@@ -157,7 +170,7 @@ class Store:
         with self._lock:
             rec = self._load(device)
             self._rollover(rec)
-            limit = PAID_RETRY_DAILY if rec["plan"] != "free" else FREE_RETRY_DAILY
+            limit = self._retry_limit(rec)
             used = rec["daily"].get("retries", 0)
             if used >= limit:
                 if rec["plan"] == "free":

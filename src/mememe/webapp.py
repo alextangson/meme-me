@@ -930,10 +930,11 @@ def create_app() -> FastAPI:
         pack_path = _find_pack_path(pack_id)
         if pack_path is None:
             raise HTTPException(404, f"pack not found: {pack_id}")
-        # 专属定制主题是 ¥29.9 档：编剧聊天免费（种草），生成要定制版权益
+        # 专属定制主题是 ¥29.9 档：编剧聊天免费（种草），生成要定制版及以上权益
         if pack_path.parent == CUSTOM_PACKS_DIR and (
             not entitlements.valid_device(device)
-            or store.plan(device) != "custom"
+            or entitlements.plan_rank(store.plan(device))
+            < entitlements.plan_rank("custom")
         ):
             _log_event("custom_gate", device=device, pack_id=pack_id)
             raise HTTPException(402, "专属定制主题需要定制版兑换码才能生成")

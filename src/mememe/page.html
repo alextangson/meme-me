@@ -880,7 +880,7 @@ $('restyleBtn').onclick = async () => {
     // 人气第一且 uses>=5 才标「最受欢迎」——冷启动期不出鬼数据
     const hot = d.styles.length && d.styles[0].uses >= 5 ? d.styles[0].id : null;
     const all = [
-      { id: '', name: '经典贴纸', desc: '默认风格，重抽一套', preview: '/api/pack-preview/shechu' },
+      { id: '', name: '经典贴纸', desc: '默认风格，重抽一套', preview: '/api/pack-preview/style-classic' },
       ...d.styles.map(s => ({ ...s, preview: `/api/pack-preview/style-${s.id}` })),
     ];
     all.forEach(s => {

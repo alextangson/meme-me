@@ -80,3 +80,25 @@ def test_draft_preserves_subject_desc():
     pack = Scriptwriter(chat).draft([{"role": "user", "content": "树懒"}])
     assert pack.subject_desc == "一只穿围裙的树懒玩偶"
     assert "subject_desc" in DRAFT_INSTRUCTION
+
+
+def test_draft_style_recommendation_sanitized():
+    import json as _json
+
+    from mememe.core.scriptwriter import Scriptwriter
+
+    def make_chat(style_id):
+        draft = {
+            "id": "t", "name": "测试", "subject": "person", "vibe": "",
+            "style_id": style_id,
+            "memes": [
+                {"id": f"m{i}", "caption": f"梗{i}", "expression": "笑",
+                 "action": "站", "shot": "半身"}
+                for i in range(16)
+            ],
+        }
+        return lambda messages, *, json_mode=False: _json.dumps(draft, ensure_ascii=False)
+
+    # 推荐了清单内画风 → 保留；瞎编的 → 清空走经典
+    assert Scriptwriter(make_chat("anime")).draft([{"role": "user", "content": "x"}]).style_id == "anime"
+    assert Scriptwriter(make_chat("nope")).draft([{"role": "user", "content": "x"}]).style_id == ""

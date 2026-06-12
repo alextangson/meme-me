@@ -825,6 +825,11 @@ def create_app() -> FastAPI:
             "name": pack.name,
             "meme_count": len(pack.memes),
             "captions": [m.caption for m in pack.memes[:8]],
+            # 方案确认卡用：全量文案+动作描述 + 编剧推荐的画风
+            "memes": [
+                {"caption": m.caption, "action": m.action} for m in pack.memes
+            ],
+            "style_id": pack.style_id,
         }
 
     @app.get("/logo.png")

@@ -28,6 +28,7 @@ SYSTEM_PROMPT = """你是「表情星球」的金牌表情包策划，帮用户�
 DRAFT_INSTRUCTION = """基于以上全部对话，输出这套表情包剧本的 JSON（只输出 JSON，不要任何其他文字）：
 {"id":"英文小写连字符id","name":"剧本名(2-6字)","description":"一句话描述",
 "subject":"person或pet或group(多人合照)","subject_desc":"主角外观一句话(如：一只穿围裙的树懒玩偶/短发戴眼镜的程序员)",
+"style_id":"从这个清单挑一个最配这套梗气质的画风：anime(日漫热血夸张)/doodle(团子涂鸦软萌)/shadiao(沙雕土味潦草)/mochi(3D手办软糯)/crayon(蜡笔童趣)/pop(波普撞色)/pixel(像素复古)/clay(黏土定格)/felt(羊毛毡手作)/bojack(美式扁平丧)/lineart(冷淡线条)/sticker(美式厚边贴纸)；拿不准就留空字符串",
 "vibe":"一句话画风氛围(只准写：小道具、点缀符号、情绪关键词、配色点缀；不准写背景颜色/场景/环境——背景永远纯白)",
 "memes":[{"id":"英文小写id","caption":"图内文案2-6字","expression":"具体可画的表情描述",
 "action":"戏剧化的动作描述（用姿态和小型手持道具表达，不要写地点/房间/环境场景）",
@@ -82,6 +83,11 @@ class Scriptwriter:
                 data = json.loads(raw)
                 data["style"] = _build_style(data.pop("vibe", ""))
                 data.setdefault("language", "zh")
+                # 编剧推荐画风：不在清单里的当没推荐（生成走经典）
+                from mememe.core.styles import STYLES
+
+                if data.get("style_id") not in STYLES:
+                    data["style_id"] = ""
                 return Pack.model_validate(data)
             except (ValueError, ValidationError) as e:
                 last_error = e

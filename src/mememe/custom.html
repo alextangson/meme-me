@@ -73,6 +73,12 @@
   .stylerow img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 11px;
                   border: 2px solid var(--line); background: #F3ECD8; transition: .12s; }
   .stylerow figure:hover img { transform: translateY(-2px) rotate(-1.5deg); border-color: var(--ink); }
+  .stylerow figure.sel img { border-color: var(--accent); border-width: 3px; }
+  .stylerow figure.sel figcaption { color: var(--accent); font-weight: 700; }
+  .draftlist { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.55; columns: 2; column-gap: 22px; }
+  .draftlist li { margin-bottom: 7px; break-inside: avoid; }
+  .draftlist small { color: var(--ink-2); display: block; }
+  @media (max-width: 560px) { .draftlist { columns: 1; } }
   .stylerow figcaption { font-size: 11.5px; font-weight: 700; color: var(--ink-2); margin-top: 5px; }
   .presets { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
   .presets button { border: 1.5px solid var(--line); background: #FFFDF6; border-radius: 999px;
@@ -135,9 +141,16 @@
       <button class="btn" id="agentSend" aria-label="发送"><svg viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg></button>
       <button class="btn primary" id="agentDraft">✨ 生成这套表情</button>
     </div>
-    <div class="gotobar" id="gotobar">
-      <div class="txt"><b id="gotoName">这套表情写好了！</b><br>回到主页上传照片就能生成 · 专属定制 ¥29.9（含全套 16 张 + 15 条视频动图）</div>
-      <a class="btn primary" id="gotoBtn" href="/">去生成 →</a>
+    <div id="draftCard" style="display:none;margin-top:14px;border-top:1.5px dashed var(--line);padding-top:14px">
+      <div class="label" id="draftTitle">方案确认</div>
+      <ol class="draftlist" id="draftList"></ol>
+      <div class="label" style="margin-top:14px">给这套挑个画风（已按梗的气质推荐）</div>
+      <div class="stylerow" id="draftStyles"></div>
+      <p class="hint" style="margin-top:8px">文案想改？直接在上面聊天里说「第几条改成什么」，再点「✨ 生成这套表情」出新方案。</p>
+      <div class="gotobar" style="display:flex;margin-top:10px">
+        <div class="txt"><b>满意就开整</b><br>上传照片即出图 · 专属定制 ¥29.9（含全套 16 张 + 15 条视频动图）</div>
+        <a class="btn primary" id="draftGoBtn" href="/">去生成 →</a>
+      </div>
     </div>
   </div>
 
@@ -283,10 +296,8 @@ async function agentMakeDraft() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.detail || resp.status);
     busy.className = 'bub ai';
-    busy.textContent = `「${data.name}」写好了！前 8 个梗：${data.captions.join('、')}。不满意继续跟我聊，再点生成会出新版本。`;
-    $('gotoName').textContent = `「${data.name}」已就绪`;
-    $('gotoBtn').href = '/?pack=' + encodeURIComponent(data.pack_id);
-    $('gotobar').style.display = 'flex';
+    busy.textContent = `「${data.name}」方案出来了！下面逐条过一遍文案、挑个画风；不满意直接跟我说改哪条，再点生成出新版 👇`;
+    renderDraftCard(data);
   } catch (e) {
     busy.className = 'bub ai';
     busy.textContent = e.name === 'AbortError'
@@ -295,6 +306,47 @@ async function agentMakeDraft() {
     report('draft_fail', e.name === 'AbortError' ? 'timeout 95s' : (e.message || e));
   }
   $('agentDraft').disabled = false;
+}
+
+// ---- 方案确认卡：烧图前先把文案和画风的不确定性消化掉 ----
+let draftPackId = '', draftStyleSel = '', draftStyleRec = '';
+
+function renderDraftCard(d) {
+  draftPackId = d.pack_id;
+  draftStyleRec = d.style_id || '';
+  draftStyleSel = draftStyleRec;
+  $('draftTitle').textContent = `「${d.name}」方案确认 · ${d.memes.length} 条逐条过目`;
+  $('draftList').innerHTML = d.memes.map(m =>
+    `<li><b>${m.caption}</b><small>${m.action}</small></li>`).join('');
+  renderDraftStyles();
+  updateDraftGo();
+  $('draftCard').style.display = 'block';
+  $('draftCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function renderDraftStyles() {
+  let styles = [];
+  try { styles = (await (await fetch('/api/styles')).json()).styles; } catch (_) {}
+  const all = [{ id: '', name: '经典贴纸' }, ...styles];
+  const box = $('draftStyles');
+  box.innerHTML = '';
+  all.forEach(s => {
+    const fig = document.createElement('figure');
+    if (s.id === draftStyleSel) fig.className = 'sel';
+    fig.style.cursor = 'pointer';
+    const tag = s.id === draftStyleRec && s.id ? '（推荐）' : '';
+    fig.innerHTML = `<img src="/api/pack-preview/style-${s.id || 'classic'}" loading="lazy" alt="${s.name}画风示例">
+      <figcaption>${s.name}${tag}</figcaption>`;
+    fig.onclick = () => { draftStyleSel = s.id; renderDraftStyles(); updateDraftGo(); };
+    box.appendChild(fig);
+  });
+}
+
+function updateDraftGo() {
+  let href = '/?pack=' + encodeURIComponent(draftPackId);
+  if (draftStyleSel) href += '&style=' + encodeURIComponent(draftStyleSel);
+  else if (draftStyleRec) href += '&style=classic';  // 推荐被改成经典：要显式压过主题推荐
+  $('draftGoBtn').href = href;
 }
 
 document.querySelectorAll('#presets button').forEach(b => {

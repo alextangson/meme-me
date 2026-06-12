@@ -1394,3 +1394,14 @@ def test_packs_expose_recommended_style(client):
     m = {p["id"]: p.get("style_id") for p in client.get("/api/packs").json()}
     assert m["yundong"] == "anime"
     assert m["shechu"] == ""
+
+
+def test_agent_draft_returns_full_memes_for_confirmation(agent_client):
+    # 方案确认卡数据：全量文案+动作 + 推荐画风字段
+    draft_id = agent_client.post(
+        "/api/agent/chat", data={"message": "随便"}
+    ).json()["draft_id"]
+    data = agent_client.post("/api/agent/draft", data={"draft_id": draft_id}).json()
+    assert len(data["memes"]) == 16
+    assert {"caption", "action"} <= set(data["memes"][0])
+    assert "style_id" in data

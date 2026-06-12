@@ -574,6 +574,12 @@ async function init() {
     currentStyle = '';  // 深链进的是新主题，画风跟新主题走
     updateStyleChip();
   }
+  const deepStyle = new URLSearchParams(location.search).get('style');
+  if (deepLink && deepStyle) {
+    currentStyle = deepStyle;  // 定制确认卡选好的画风随深链带入（classic=显式经典）
+    saveState();
+    updateStyleChip();
+  }
   if (!deepLink && saved.jobId) {
     const r = await fetch(`/api/jobs/${saved.jobId}`).catch(() => null);
     if (r && r.ok) openJob(saved.jobId);  // 复原上次那套结果

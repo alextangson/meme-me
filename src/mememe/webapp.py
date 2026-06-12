@@ -665,6 +665,7 @@ def create_app() -> FastAPI:
             "meme_count": len(pack.memes),
             "captions": [m.caption for m in pack.memes],
             "preview_url": f"/api/pack-preview/{pack.id}" if has_preview else "",
+            "style_id": pack.style_id,  # 主题推荐画风，前端画风提示行用
             "custom": is_custom,
         }
 
@@ -985,8 +986,11 @@ def create_app() -> FastAPI:
         else:
             device = ""
         pack = load_pack(pack_path)
-        # 主题×画风：用户没显式选画风时，用主题推荐的画风（aha 的第一眼）
-        if not style and pack.style_id in STYLES:
+        # 主题×画风：用户没显式选画风时，用主题推荐的画风（aha 的第一眼）；
+        # "classic" 是显式选经典贴纸的哨兵值——可以压过主题推荐
+        if style == "classic":
+            style = ""
+        elif not style and pack.style_id in STYLES:
             style = pack.style_id
         job_id = uuid.uuid4().hex[:12]
         out_dir = OUTPUT_ROOT / job_id

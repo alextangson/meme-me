@@ -256,6 +256,7 @@
 
     <div class="card">
     <div class="label"><span class="n">3</span>开始生成</div>
+    <p class="hint" id="styleChip" style="display:none;margin:0 0 10px;cursor:pointer"></p>
     <button class="btn primary big" id="go" disabled>做我的专属表情包</button>
     <p class="privacy" id="goHint">先免费出 8 张 · 约 90 秒逐张揭晓 · 满意再解锁全套</p>
   </div>
@@ -483,7 +484,11 @@ function renderPacks(filter) {
     || p.name.toLowerCase().includes(kw)
     || (p.description || '').toLowerCase().includes(kw)
     || p.captions.some(c => c.toLowerCase().includes(kw)));
-  if (!shown.find(p => p.id === packId)) packId = shown.length ? shown[0].id : null;
+  if (!shown.find(p => p.id === packId)) {
+    const before = packId;
+    packId = shown.length ? shown[0].id : null;
+    if (packId !== before) currentStyle = '';  // 主题变了，画风跟着主题走
+  }
   box.innerHTML = '';
   if (!shown.length) {
     box.innerHTML = '<p class="hint">没有找到？<a href="/custom">让 AI 给你定制一套 →</a></p>';
@@ -501,9 +506,15 @@ function renderPacks(filter) {
       <div class="pname">${p.name}${p.custom ? '<span class="cbadge">定制</span>' : ''}<span class="pcount">${p.meme_count}梗</span></div>
       <div class="pdesc">${p.description || ''}</div>
       <div class="chips">${chips}</div>`;
-    div.onclick = () => { packId = p.id; saveState(); renderPacks($('psearch').value); };
+    div.onclick = () => {
+      // 显式选的画风只在当前主题内有效——换主题即重置为新主题的推荐画风
+      if (p.id !== packId) { packId = p.id; currentStyle = ''; }
+      saveState();
+      renderPacks($('psearch').value);
+    };
     box.appendChild(div);
   });
+  updateStyleChip();
 }
 
 // 定制剧本只属于创建者：服务器不公开列出，浏览器本地记住自己的
@@ -526,6 +537,7 @@ async function refreshPacks(selectId) {
   localStorage.setItem(MY_PACKS_KEY, JSON.stringify(ids.filter((id, i) =>
     mine[i] === null ? saved.includes(id) : (mine[i] !== 'gone' && mine[i].custom))));
   allPacks = [...customs, ...pub.filter(p => !customs.some(c => c.id === p.id))];
+  allPacks.forEach(p => { PACK_STYLE[p.id] = p.style_id || ''; });
   if (selectId) packId = selectId;
   renderPacks($('psearch').value);
 }
@@ -551,7 +563,17 @@ async function init() {
   const saved = loadState();
   const deepLink = new URLSearchParams(location.search).get('pack');
   currentStyle = saved.currentStyle || '';
+  // 画风名字表（画风提示行用）——后台拉，失败不挡主流程
+  fetch('/api/styles').then(r => r.json()).then(d => {
+    STYLES_LIST = d.styles;
+    d.styles.forEach(s => { STYLE_NAMES[s.id] = s.name; });
+    updateStyleChip();
+  }).catch(() => {});
   await refreshPacks(deepLink || saved.packId || undefined);  // 深链优先，其次上次选择
+  if (deepLink && deepLink !== saved.packId) {
+    currentStyle = '';  // 深链进的是新主题，画风跟新主题走
+    updateStyleChip();
+  }
   if (!deepLink && saved.jobId) {
     const r = await fetch(`/api/jobs/${saved.jobId}`).catch(() => null);
     if (r && r.ok) openJob(saved.jobId);  // 复原上次那套结果
@@ -855,37 +877,67 @@ $('inviteBtn').onclick = async () => {
   }
 };
 
-// ---- 换画风 ----
-let stylesLoaded = false;
-$('restyleBtn').onclick = async () => {
-  if (!stylesLoaded) {
+// ---- 画风：默认跟随主题推荐；显式选择只在当前主题内有效（换主题即重置）----
+let STYLE_NAMES = {};   // id -> 展示名
+let PACK_STYLE = {};    // packId -> 主题推荐画风 id
+let STYLES_LIST = null;
+let styleDlgFromResult = false;
+
+function styleName(id) {
+  return STYLE_NAMES[id] || (id === 'classic' ? '经典贴纸' : id);
+}
+
+function updateStyleChip() {
+  const chip = $('styleChip');
+  if (!packId) { chip.style.display = 'none'; return; }
+  const rec = PACK_STYLE[packId];
+  let label;
+  if (currentStyle) label = `画风：<b>${styleName(currentStyle)}</b>（你选的）`;
+  else if (rec) label = `画风：<b>${styleName(rec)}</b>（主题推荐）`;
+  else label = '画风：<b>经典贴纸</b>（默认）';
+  chip.innerHTML = label + ' · 点击更换';
+  chip.style.display = '';
+}
+$('styleChip').onclick = () => openStyleDlg(false);
+
+async function openStyleDlg(fromResult) {
+  styleDlgFromResult = fromResult;
+  if (!STYLES_LIST) {
     const d = await (await fetch('/api/styles')).json();
-    const list = $('styleList');
-    // 人气第一且 uses>=5 才标「最受欢迎」——冷启动期不出鬼数据
-    const hot = d.styles.length && d.styles[0].uses >= 5 ? d.styles[0].id : null;
-    const all = [
-      { id: '', name: '经典贴纸', desc: '默认风格，重抽一套', preview: '/api/pack-preview/style-classic' },
-      ...d.styles.map(s => ({ ...s, preview: `/api/pack-preview/style-${s.id}` })),
-    ];
-    all.forEach(s => {
-      const card = document.createElement('div');
-      card.className = 'scard';
-      card.setAttribute('role', 'button');
-      card.innerHTML = `<img src="${s.preview}" loading="lazy" alt="${s.name}画风示例"><b>${s.name}</b><small>${s.desc}</small>`
-        + (s.id === hot ? '<span class="hot">🔥 最受欢迎</span>' : '');
-      card.onclick = () => { $('styleDlg').close(); restyle(s.id); };
-      list.appendChild(card);
-    });
-    stylesLoaded = true;
+    STYLES_LIST = d.styles;
+    d.styles.forEach(s => { STYLE_NAMES[s.id] = s.name; });
   }
+  const rec = PACK_STYLE[packId] || '';
+  // 人气第一且 uses>=5 才标「最受欢迎」——冷启动期不出鬼数据
+  const hot = STYLES_LIST.length && STYLES_LIST[0].uses >= 5 ? STYLES_LIST[0].id : null;
+  const all = [
+    { id: '', name: '跟随主题', desc: rec ? `本主题推荐：${styleName(rec)}` : '本主题默认：经典贴纸',
+      preview: `/api/pack-preview/style-${rec || 'classic'}` },
+    { id: 'classic', name: '经典贴纸', desc: '万能百搭贴纸风', preview: '/api/pack-preview/style-classic' },
+    ...STYLES_LIST.map(s => ({ ...s, preview: `/api/pack-preview/style-${s.id}` })),
+  ];
+  const list = $('styleList');
+  list.innerHTML = '';  // 每次重建：「跟随主题」的预览随当前主题变
+  all.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'scard';
+    card.setAttribute('role', 'button');
+    card.innerHTML = `<img src="${s.preview}" loading="lazy" alt="${s.name}画风示例"><b>${s.name}</b><small>${s.desc}</small>`
+      + (s.id === hot ? '<span class="hot">🔥 最受欢迎</span>' : '');
+    card.onclick = () => { $('styleDlg').close(); chooseStyle(s.id); };
+    list.appendChild(card);
+  });
   $('styleDlg').showModal();
-};
+}
+$('restyleBtn').onclick = () => openStyleDlg(true);
 $('styleCancel').onclick = () => $('styleDlg').close();
 
-async function restyle(styleId) {
+function chooseStyle(styleId) {
   currentStyle = styleId;
   saveState();
-  $('go').click();
+  updateStyleChip();
+  if (styleDlgFromResult) $('go').click();  // 结果区进来的 = 换画风立刻再来一套
+  else showToast(`画风已选：${styleId ? styleName(styleId) : '跟随主题'}，点「做我的专属表情包」生成`);
 }
 
 // ---- 历史（只属于这台浏览器：本地记 id，服务器按 id 取，看不到别人的） ----

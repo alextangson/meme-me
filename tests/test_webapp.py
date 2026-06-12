@@ -1373,3 +1373,24 @@ def test_face_desc_extracted_once_and_injected(client, tmp_path, monkeypatch):
     _wait_done(client, job_id)
     assert len(calls) == 1
     assert "鹅蛋脸测试特征" in client.fake_provider.prompts[-1]
+
+
+def test_explicit_classic_beats_pack_default_style(client, tmp_path):
+    import json as _json
+
+    resp = client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data={"pack_id": "yundong", "style": "classic"},
+    )
+    job_id = resp.json()["job_id"]
+    _wait_done(client, job_id)
+    meta = _json.loads((tmp_path / job_id / "job.json").read_text())
+    assert meta["style"] == ""  # 显式经典：压过主题推荐，不带画风段
+    assert not any("画风指定" in p for p in client.fake_provider.prompts)
+
+
+def test_packs_expose_recommended_style(client):
+    m = {p["id"]: p.get("style_id") for p in client.get("/api/packs").json()}
+    assert m["yundong"] == "anime"
+    assert m["shechu"] == ""

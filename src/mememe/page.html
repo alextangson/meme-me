@@ -149,13 +149,6 @@
   .lgi svg { width: 11px; height: 11px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .badge { position: absolute; top: 5px; right: 5px; font-size: 10px; font-weight: 900; background: var(--accent); color: #fff; border-radius: 6px; padding: 3px 6px; pointer-events: none; }
   .badge.busy { background: var(--ink-2); animation: blink 1.2s ease infinite; }
-  .menu { position: absolute; inset: auto 4px 4px 4px; background: rgba(255,255,255,.99);
-          border: 2px solid var(--ink); border-radius: 11px; z-index: 5; display: flex; flex-direction: column; overflow: hidden; }
-  .menu button { display: flex; align-items: center; gap: 7px; border: 0; background: none; padding: 8px 9px; font-size: 11.5px; cursor: pointer; text-align: left; color: var(--ink); font-weight: 600; }
-  .menu button:hover { background: #FFF1E8; }
-  .menu button + button { border-top: 1px solid var(--line); }
-  .menu svg { width: 13px; height: 13px; stroke: var(--ink-2); stroke-width: 2; fill: none; }
-  .menu small { color: var(--ink-3); margin-left: auto; font-weight: 500; }
 
   .unlock { margin-top: 14px; padding: 16px; border: 2.5px dashed #E0BE6B; border-radius: 14px;
             display: flex; align-items: center; gap: 12px; background: #FFFDF6; }
@@ -699,7 +692,7 @@ function render(job) {
       cell.innerHTML = `<img src="${img.anim_url}?t=${Date.now()}" alt="${img.caption} 动图">
         <span class="badge">GIF</span>
         <button class="ibtn br" title="换一种动法" aria-label="换一种动法">${ICONS.wand}</button>`;
-      cell.querySelector('.ibtn').onclick = (e) => { e.stopPropagation(); animMenu(img.index); };
+      cell.querySelector('.ibtn').onclick = (e) => { e.stopPropagation(); startAnimate(img.index); };
     } else if (img.anim_status === 'running') {
       cell.innerHTML = `<img src="${img.url}" alt="${img.caption}"><span class="badge busy">动图中</span>`;
     } else {
@@ -708,7 +701,7 @@ function render(job) {
         <button class="ibtn tr" title="让它动起来" aria-label="让它动起来">${ICONS.wand}</button>`;
       const [redo, anim] = cell.querySelectorAll('.ibtn');
       redo.onclick = (e) => { e.stopPropagation(); retry(img.index); };
-      anim.onclick = (e) => { e.stopPropagation(); animMenu(img.index); };
+      anim.onclick = (e) => { e.stopPropagation(); startAnimate(img.index); };
     }
   });
 }
@@ -730,30 +723,15 @@ async function retry(index) {
   startPoll();
 }
 
-function animMenu(index) {
-  const cell = $('cell-' + index);
-  const old = cell.querySelector('.menu');
-  if (old) { old.remove(); return; }
-  const menu = document.createElement('div');
-  menu.className = 'menu';
-  menu.innerHTML = `
-    <button data-m="shake">${ICONS.wand}抖一抖<small>免费 · 秒出</small></button>
-    <button data-m="frames">${ICONS.wand}拼帧<small>约 30 秒</small></button>
-    <button data-m="video">${ICONS.wand}视频级<small>约 2 分钟</small></button>`;
-  menu.querySelectorAll('button').forEach(b => {
-    b.onclick = async (e) => {
-      e.stopPropagation(); menu.remove();
-      let motion = '';
-      if (b.dataset.m !== 'shake') {
-        const t = await askText('想要什么动作？', '留空用默认，比如：举着咖啡杯慢动作干杯');
-        if (t === null) return;
-        motion = t;
-      }
-      animate(index, b.dataset.m, motion);
-    };
-  });
-  cell.appendChild(menu);
-  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+// 一键视频级：拼帧（慢且不连贯）和抖一抖（没人点）已从入口下架（用户拍板），
+// 后端各模式保留——老任务做不了视频时自动退抖一抖兜底
+async function startAnimate(index) {
+  const motion = await askText(
+    '让它动起来：想要什么动作？',
+    '描述动作，如：举着咖啡杯慢动作干杯。改文字请用「换一张」按钮',
+  );
+  if (motion === null) return;
+  animate(index, 'video', motion);
 }
 
 async function animate(index, mode, motion) {
@@ -763,8 +741,14 @@ async function animate(index, mode, motion) {
   fd.append('device', deviceId());
   const resp = await fetch(`/api/jobs/${jobId}/animate/${index}`, { method: 'POST', body: fd });
   if (!resp.ok) {
-    showToast(await errMessage(resp));
-    if (resp.status === 402) openPaywall('video');
+    const msg = await errMessage(resp);
+    if (resp.status === 402) { showToast(msg); openPaywall('video'); return; }
+    if (resp.status === 409 && mode === 'video' && msg.includes('抖一抖')) {
+      // 老任务没有原图/剧本做不了视频——自动退抖一抖，别让用户撞死胡同
+      showToast('这张做不了视频动图，先给你来个抖一抖');
+      return animate(index, 'shake', '');
+    }
+    showToast(msg);
     return;
   }
   startPoll();

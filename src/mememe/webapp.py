@@ -177,6 +177,7 @@ class Job:
     style: str = ""
     caption_style: str = ""
     device: str = ""  # 发起生成的设备——裂变归因与额度结算的主体
+    face_desc: str = ""  # 视觉模型提取的相貌特征，注入每张 prompt 锚定相似度
     status: str = "running"
     error: str = ""
     images: list[dict] = field(default_factory=list)
@@ -206,6 +207,7 @@ def _save_meta(job: Job) -> None:
             "style": job.style,
             "caption_style": job.caption_style,
             "device": job.device,
+            "face_desc": job.face_desc,
             "status": job.status,
             "error": job.error,
             "created_at": job.created_at,
@@ -280,6 +282,7 @@ def _load_jobs() -> dict[str, Job]:
             style=meta.get("style", ""),
             caption_style=meta.get("caption_style", ""),
             device=meta.get("device", ""),
+            face_desc=meta.get("face_desc", ""),
             status=status,
             error=meta.get("error", ""),
             images=images,
@@ -327,7 +330,7 @@ def _generate_one(job: Job, provider: ImageProvider, pos: int) -> None:
     meme = job.pack.memes[pos]
     prompt = compile_meme(
         job.pack, meme, style=job.style, caption_style=job.caption_style,
-        caption_seed=_caption_seed(job),
+        caption_seed=_caption_seed(job), face_desc=job.face_desc,
     )
     with job.lock:
         job.images[pos]["status"] = "running"
@@ -370,7 +373,15 @@ def _any_done(job: Job) -> bool:
     return any(i["status"] == "done" for i in job.images)
 
 
+FACE_DESC_ON = os.environ.get("MEMEME_FACE_DESC", "1") != "0"
+
+
 def _run_generation(job: Job, provider: ImageProvider) -> None:
+    # 出图前先提一次相貌特征（一次调用全套共享，重摇/续生成复用）
+    if FACE_DESC_ON and not job.face_desc:
+        from mememe.providers.gemini import describe_subject
+
+        job.face_desc = describe_subject(job.selfie)
     _generate_batch(job, provider, list(range(len(job.memes))))
     _rebuild_collage(job)
     # 出了几张就算成功（单张错误可重摇）；一张都没出才算整套失败
@@ -485,6 +496,7 @@ def _run_retry(
             style=job.style,
             caption_style=job.caption_style,
             caption_seed=_caption_seed(job),
+            face_desc=job.face_desc,
         )
         raw = provider.generate(prompt, job.selfie)
         _log_event(

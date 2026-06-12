@@ -7,6 +7,43 @@ import os
 from typing import Any
 
 DEFAULT_MODEL = "gemini-3.1-flash-image"
+VISION_MODEL = "gemini-2.5-flash"
+
+
+def describe_subject(reference: bytes) -> str:
+    """提取参考照片主体的可辨识外观特征文字——注入生成 prompt 做锚点。
+
+    图像参考 + 文字特征双锚定，相似度比纯图参考稳得多（模型会忽略
+    图里的细节，但不会忽略 prompt 里点名的特征）。任何失败返回空串：
+    特征注入是增强项，绝不挡生成。
+    """
+    try:
+        from google import genai
+        from google.genai import types
+
+        kwargs: dict[str, Any] = {}
+        base_url = os.environ.get("MEMEME_GEMINI_BASE_URL")
+        if base_url:
+            kwargs["http_options"] = types.HttpOptions(base_url=base_url)
+        client = genai.Client(**kwargs)
+        mime = (
+            "image/png"
+            if reference[:8] == b"\x89PNG\r\n\x1a\n"
+            else "image/jpeg"
+        )
+        resp = client.models.generate_content(
+            model=os.environ.get("MEMEME_VISION_MODEL", VISION_MODEL),
+            contents=[
+                types.Part.from_bytes(data=reference, mime_type=mime),
+                "用4-6条简短要点客观描述照片主体（人物或宠物）的可辨识外观特征："
+                "脸型、发型发色、眉眼、鼻唇、眼镜或饰品、胡须痣等显著特征"
+                "（宠物则是品种、毛色花纹、五官特点）。每条不超过15个字，"
+                "只写看得见的，不要主观评价，直接输出要点列表。",
+            ],
+        )
+        return (resp.text or "").strip()[:500]
+    except Exception:
+        return ""
 
 
 def extract_image_bytes(response: Any) -> bytes:

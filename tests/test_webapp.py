@@ -35,6 +35,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(webapp, "OUTPUT_ROOT", tmp_path)
     monkeypatch.setattr(webapp, "DEVICES_DIR", tmp_path / "devices")
     monkeypatch.setattr(webapp, "CODES_FILE", tmp_path / "codes.json")
+    # 关掉相貌特征提取——开着每次生成都会真调视觉 API（烧额度且慢）
+    monkeypatch.setattr(webapp, "FACE_DESC_ON", False)
     c = TestClient(webapp.create_app())
     c.fake_provider = provider
     c.provider_calls = provider_calls
@@ -1337,3 +1339,37 @@ def test_packs_sorted_by_popularity(client):
     ids = [p["id"] for p in client.get("/api/packs").json()]
     assert ids[0] == "ganfan"  # 2 次使用 > 其他 0 次
     assert "chengxuyuan" in ids and "youxidang" in ids
+
+
+def test_face_desc_extracted_once_and_injected(client, tmp_path, monkeypatch):
+    import json as _json
+
+    import mememe.providers.gemini as gem
+
+    calls = []
+
+    def fake_describe(selfie):
+        calls.append(1)
+        return "1. 鹅蛋脸测试特征\n2. 细框眼镜"
+
+    monkeypatch.setattr(webapp, "FACE_DESC_ON", True)
+    monkeypatch.setattr(gem, "describe_subject", fake_describe)
+    resp = client.post(
+        "/api/generate",
+        files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+        data={"pack_id": "shechu"},
+    )
+    job_id = resp.json()["job_id"]
+    _wait_done(client, job_id)
+    assert len(calls) == 1  # 一次提取全套共享
+    assert all(
+        "鹅蛋脸测试特征" in p for p in client.fake_provider.prompts
+    )  # 每张 prompt 都带锚点
+    meta = _json.loads((tmp_path / job_id / "job.json").read_text())
+    assert "鹅蛋脸测试特征" in meta["face_desc"]  # 持久化，重摇/续生成复用
+
+    # 重摇复用已提取的特征，不再调视觉 API
+    client.post(f"/api/jobs/{job_id}/retry/1")
+    _wait_done(client, job_id)
+    assert len(calls) == 1
+    assert "鹅蛋脸测试特征" in client.fake_provider.prompts[-1]

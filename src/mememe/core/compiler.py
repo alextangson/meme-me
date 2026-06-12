@@ -64,6 +64,7 @@ def compile_meme(
     style: str | None = None,
     caption_style: str | None = None,
     caption_seed: int = 0,
+    face_desc: str = "",
 ) -> str:
     prompt = _PROMPT_TEMPLATE.format(
         subject_word=_SUBJECT_WORD[pack.subject],
@@ -88,6 +89,12 @@ def compile_meme(
         prompt += (
             "\n【文字样式】画面文案改用："
             + _CAPTION_VARIANTS[caption_seed % len(_CAPTION_VARIANTS)]
+        )
+    if face_desc:
+        # 图像参考 + 文字特征双锚定：prompt 里点名的特征模型不敢丢
+        prompt += (
+            "\n【相貌特征锚点】参考照片主体的可辨识特征，生成时逐条对齐"
+            "（按画风风格化呈现，但每一条都要看得出来）：\n" + face_desc
         )
     return prompt
 

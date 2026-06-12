@@ -150,3 +150,12 @@ def test_style_override_restates_composition_protection():
     styled = compile_meme(pack, pack.memes[0], style="sticker")
     tail = styled.split("【画风指定】")[1]
     assert "居中端正的构图" in tail  # 画风段不得推翻构图铁律
+
+
+def test_face_desc_injected_as_anchor():
+    pack = load_pack(PACKS_DIR / "shechu.yaml")
+    plain = compile_meme(pack, pack.memes[0])
+    assert "相貌特征锚点" not in plain
+    anchored = compile_meme(pack, pack.memes[0], face_desc="1. 鹅蛋脸\n2. 细框眼镜")
+    assert "相貌特征锚点" in anchored
+    assert "细框眼镜" in anchored

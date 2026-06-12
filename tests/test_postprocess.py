@@ -87,3 +87,27 @@ def test_remove_background_without_rembg_raises_install_hint():
         pass
     with pytest.raises(RuntimeError, match="rembg"):
         maybe_remove_background(_synthetic_image(64, 64), enabled=True)
+
+
+def test_crop_to_faces_no_face_returns_original():
+    from PIL import Image
+
+    from mememe.core.postprocess import crop_to_faces
+
+    blank = Image.new("RGB", (800, 800), (240, 240, 240))
+    assert crop_to_faces(blank).size == (800, 800)
+
+
+def test_crop_to_faces_zooms_small_face_in_large_canvas():
+    from pathlib import Path
+
+    from PIL import Image
+
+    from mememe.core.postprocess import crop_to_faces
+
+    face = Image.open(Path(__file__).parent / "fixtures" / "face-256.jpg")
+    canvas = Image.new("RGB", (1200, 1200), (235, 235, 235))
+    canvas.paste(face, (480, 200))  # 模拟全身照里脸只占一小块
+    cropped = crop_to_faces(canvas)
+    assert cropped.size != canvas.size, "应当裁剪"
+    assert cropped.width < 900 and cropped.height < 1100  # 显著缩小

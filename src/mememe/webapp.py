@@ -382,6 +382,8 @@ def _run_generation(job: Job, provider: ImageProvider) -> None:
         from mememe.providers.gemini import describe_subject
 
         job.face_desc = describe_subject(job.selfie)
+        if not job.face_desc:  # 静默失败也要可观测——少了锚点相似度会掉
+            _log_event("face_desc_empty", job_id=job.id)
     _generate_batch(job, provider, list(range(len(job.memes))))
     _rebuild_collage(job)
     # 出了几张就算成功（单张错误可重摇）；一张都没出才算整套失败

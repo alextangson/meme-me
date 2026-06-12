@@ -372,7 +372,7 @@
   </div>
   <div class="payzone" id="payZone"></div>
   <div class="redeem">
-    <input id="redeemInput" type="text" placeholder="兑换码，如 MP-XXXXXXXX" autocapitalize="characters" autocomplete="off">
+    <input id="redeemInput" type="text" placeholder="兑换码 / 爱发电订单号" autocapitalize="characters" autocomplete="off">
     <button class="btn primary" id="redeemBtn">兑换</button>
   </div>
   <div class="invite">
@@ -536,6 +536,14 @@ function loadState() {
 }
 
 async function init() {
+  // 活动码深链：?code= 落地自动解锁（沙龙/推广限免发这种链接）
+  const eventCode = new URLSearchParams(location.search).get('code');
+  if (eventCode) {
+    await redeemCode(eventCode.trim());
+    const url = new URL(location.href);
+    url.searchParams.delete('code');
+    history.replaceState(null, '', url.pathname + (url.search || ''));
+  }
   const saved = loadState();
   const deepLink = new URLSearchParams(location.search).get('pack');
   currentStyle = saved.currentStyle || '';
@@ -763,7 +771,9 @@ function renderPayZone(me) {
     if (me.pay_url_custom && me.pay_url_custom !== me.pay_url) {
       html += `<a class="btn big" style="margin-top:8px" href="${me.pay_url_custom}" target="_blank" rel="noopener" data-t="pay_click_299">¥29.9 专属定制 · 去付款 →</a>`;
     }
-    html += '<p class="privacy" style="margin-top:6px">付款后秒发兑换码，回来输码立即生效</p>';
+    html += `<p class="privacy" style="margin-top:6px">${me.order_redeem
+      ? '付款后复制「订单号」粘贴到下面输入框，自动解锁'
+      : '付款后秒发兑换码，回来输码立即生效'}</p>`;
     z.innerHTML = html;
     z.querySelectorAll('a[data-t]').forEach(a => { a.onclick = () => track(a.dataset.t); });
   } else if (me.has_contact_qr) {
@@ -808,20 +818,26 @@ $('unlockBtn').onclick = async () => {
 };
 $('unlockCancel').onclick = () => $('unlockDlg').close();
 
-$('redeemBtn').onclick = async () => {
-  const code = $('redeemInput').value.trim();
-  if (!code) { showToast('先输入兑换码'); return; }
-  $('redeemBtn').disabled = true;
+async function redeemCode(code) {
   const fd = new FormData();
   fd.append('code', code);
   fd.append('device', deviceId());
   const resp = await fetch('/api/redeem', { method: 'POST', body: fd });
-  $('redeemBtn').disabled = false;
-  if (!resp.ok) { showToast(await errMessage(resp)); return; }
+  if (!resp.ok) { showToast(await errMessage(resp)); return false; }
   const me = await resp.json();
+  showToast(`解锁成功！视频动图额度 ${me.video_credits} 条`);
+  return true;
+}
+
+$('redeemBtn').onclick = async () => {
+  const code = $('redeemInput').value.trim();
+  if (!code) { showToast('先输入兑换码或爱发电订单号'); return; }
+  $('redeemBtn').disabled = true;
+  const ok = await redeemCode(code);
+  $('redeemBtn').disabled = false;
+  if (!ok) return;
   $('redeemInput').value = '';
   $('unlockDlg').close();
-  showToast(`兑换成功！视频动图额度 ${me.video_credits} 条`);
   // 从「解锁全套」进来的，兑换完直接把剩下 8 张跑起来
   if (payReason === 'extend' && jobId) doExtend();
 };

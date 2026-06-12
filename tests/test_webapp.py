@@ -1064,3 +1064,101 @@ def test_admin_data_includes_monetize_summary(client, monkeypatch):
     data = client.get("/api/admin/data", params={"key": "k"}).json()
     assert data["monetize"]["codes"]["unlocked"]["total"] == 4  # 3 + _entitle 发的 1
     assert data["monetize"]["devices"]["paid"] == 1
+
+
+# ---- 活动码（多次使用/限时）+ 爱发电订单核销 + 性能头 ----
+
+
+def test_event_code_multi_use_with_cap(client, monkeypatch):
+    monkeypatch.setattr(webapp, "ADMIN_KEY", "k")
+    resp = client.post(
+        "/api/admin/codes", params={"key": "k"},
+        data={"plan": "unlocked", "n": 1, "uses": 2, "days": 3, "video_credits": 3},
+    )
+    code = resp.json()["codes"][0]
+
+    # 两台设备各领一次；第三台撞名额上限
+    r1 = client.post("/api/redeem", data={"code": code, "device": "deveventaaa1111"})
+    assert r1.status_code == 200
+    assert r1.json()["plan"] == "unlocked"
+    assert r1.json()["video_credits"] == 1 + 3  # 尝鲜 1 + 活动码自定义 3
+    assert client.post(
+        "/api/redeem", data={"code": code, "device": "deveventbbb2222"}
+    ).status_code == 200
+    r3 = client.post("/api/redeem", data={"code": code, "device": "deveventccc3333"})
+    assert r3.status_code == 400
+    assert "名额" in r3.json()["detail"]
+    # 同一台领两次也不行
+    again = client.post("/api/redeem", data={"code": code, "device": "deveventaaa1111"})
+    assert again.status_code == 400
+
+
+def test_event_code_expiry(client, monkeypatch):
+    from mememe import entitlements
+
+    store = entitlements.Store(webapp.DEVICES_DIR, webapp.CODES_FILE)
+    code = store.create_codes("unlocked", 1, max_uses=10, expires_in_days=1)[0]
+    codes = store._load_codes()
+    codes[code]["expires_at"] = time.time() - 10  # 拨过期
+    store._save_codes(codes)
+    r = client.post("/api/redeem", data={"code": code, "device": DEV})
+    assert r.status_code == 400
+    assert "过期" in r.json()["detail"]
+
+
+def test_afdian_order_redeem(client, monkeypatch):
+    from mememe.providers import afdian
+
+    monkeypatch.setattr(afdian, "configured", lambda: True)
+    monkeypatch.setattr(
+        afdian, "query_order",
+        lambda no: {"out_trade_no": no, "total_amount": "9.90", "status": 2},
+    )
+    order = "202606120012345678901234"
+    r = client.post("/api/redeem", data={"code": order, "device": DEV})
+    assert r.status_code == 200
+    assert r.json()["plan"] == "unlocked"
+    # 同订单第二台设备核销被拒
+    r2 = client.post("/api/redeem", data={"code": order, "device": "devotherrr99999"})
+    assert r2.status_code == 400
+    assert "核销" in r2.json()["detail"]
+
+
+def test_afdian_custom_amount_grants_custom_plan(client, monkeypatch):
+    from mememe.providers import afdian
+
+    monkeypatch.setattr(afdian, "configured", lambda: True)
+    monkeypatch.setattr(
+        afdian, "query_order",
+        lambda no: {"out_trade_no": no, "total_amount": "29.90"},
+    )
+    r = client.post(
+        "/api/redeem", data={"code": "20260612999888777666", "device": DEV}
+    )
+    assert r.status_code == 200
+    assert r.json()["plan"] == "custom"
+
+
+def test_afdian_unconfigured_degrades_gracefully(client, monkeypatch):
+    from mememe.providers import afdian
+
+    monkeypatch.setattr(afdian, "configured", lambda: False)
+    r = client.post(
+        "/api/redeem", data={"code": "20260612000011112222", "device": DEV}
+    )
+    assert r.status_code == 503
+    assert "主理人" in r.json()["detail"]
+
+
+def test_static_files_send_cache_headers(client):
+    job_id = _animated_job(client)
+    job = client.get(f"/api/jobs/{job_id}").json()
+    resp = client.get(job["images"][0]["url"])
+    assert "max-age=86400" in resp.headers.get("cache-control", "")
+    preview = client.get("/api/pack-preview/shechu")
+    assert "max-age" in preview.headers.get("cache-control", "")
+
+
+def test_gzip_enabled_for_page(client):
+    resp = client.get("/", headers={"Accept-Encoding": "gzip"})
+    assert resp.headers.get("content-encoding") == "gzip"

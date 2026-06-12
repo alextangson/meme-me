@@ -536,7 +536,11 @@ def _job_json(job: Job) -> dict:
 
 
 def create_app() -> FastAPI:
+    from fastapi.middleware.gzip import GZipMiddleware
+
     app = FastAPI(title="mememe")
+    # HTML/轮询 JSON 压缩：手机弱网下页面和 16 张图的 job JSON 小好几倍
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     jobs: dict[str, Job] = _load_jobs()
     store = entitlements.Store(DEVICES_DIR, CODES_FILE)
 
@@ -741,9 +745,12 @@ def create_app() -> FastAPI:
     @app.get("/api/me")
     def me(device: str = "") -> dict:
         """付费墙渲染数据：我的权益 + 站点收款入口。"""
+        from mememe.providers import afdian
+
         info = {
             "pay_url": PAY_URL,
             "pay_url_custom": PAY_URL_CUSTOM or PAY_URL,
+            "order_redeem": afdian.configured(),  # 订单号自助核销是否可用
             "has_contact_qr": CONTACT_QR_FILE.exists(),
             "plan": "free",
             "video_credits": 0,
@@ -754,11 +761,41 @@ def create_app() -> FastAPI:
             info.update(store.snapshot(device))
         return info
 
+    def _redeem_afdian(order_no: str, device: str) -> tuple[bool, str]:
+        """爱发电订单自助核销：查单→按实付金额定档→一次性发权益。"""
+        from mememe.providers import afdian
+
+        if not afdian.configured():
+            raise HTTPException(
+                503, "订单自动核销还没开通——把订单号发给主理人，马上给你开"
+            )
+        try:
+            order = afdian.query_order(order_no)
+        except Exception as e:
+            _log_server_error("afdian_query", e, device=device)
+            raise HTTPException(502, "查单服务开小差了，稍后再试或联系主理人")
+        if order is None:
+            raise HTTPException(400, "没查到这个订单号，检查一下有没有复制全")
+        amount = afdian.order_amount(order)
+        if amount >= 29.9:
+            plan = "custom"
+        elif amount >= 9.9:
+            plan = "unlocked"
+        else:
+            raise HTTPException(400, "订单金额对不上档位，联系主理人看看")
+        return store.redeem_order(order_no, device, plan)
+
     @app.post("/api/redeem")
     def redeem(code: str = Form(...), device: str = Form(...)) -> dict:
         if not entitlements.valid_device(device):
             raise HTTPException(422, "设备标识无效，刷新页面再试")
-        ok, result = store.redeem(code.strip().upper(), device)
+        from mememe.providers import afdian
+
+        code = code.strip()
+        if afdian.looks_like_order_no(code):
+            ok, result = _redeem_afdian(code, device)
+        else:
+            ok, result = store.redeem(code.upper(), device)
         if not ok:
             _log_event("redeem_bad", device=device, detail=result)
             raise HTTPException(400, result)
@@ -767,18 +804,30 @@ def create_app() -> FastAPI:
 
     @app.post("/api/admin/codes")
     def admin_codes(
-        key: str = "", plan: str = Form("unlocked"), n: int = Form(1)
+        key: str = "",
+        plan: str = Form("unlocked"),
+        n: int = Form(1),
+        uses: int = Form(1),
+        days: float = Form(0),
+        video_credits: int = Form(-1),
     ) -> dict:
-        """主理人发码：收款确认后在 /admin 生成，微信发给买家。"""
+        """主理人发码。uses>1 即活动码（限名额，可配 days 限时、
+        video_credits 覆盖默认视频额度）——沙龙/推广限免就用它。"""
         if not ADMIN_KEY:
             raise HTTPException(404, "not found")
         if not hmac.compare_digest(key, ADMIN_KEY):
             raise HTTPException(403, "forbidden")
         try:
-            codes = store.create_codes(plan, max(1, min(n, 50)))
+            codes = store.create_codes(
+                plan,
+                max(1, min(n, 50)),
+                max_uses=max(1, min(uses, 10000)),
+                expires_in_days=max(0.0, days),
+                video_credits=None if video_credits < 0 else video_credits,
+            )
         except ValueError as e:
             raise HTTPException(422, str(e))
-        return {"codes": codes, "plan": plan}
+        return {"codes": codes, "plan": plan, "uses": uses, "days": days}
 
     @app.get("/api/pack-preview/{pack_id}")
     def pack_preview(pack_id: str) -> FileResponse:
@@ -787,7 +836,10 @@ def create_app() -> FastAPI:
         for base in (PACKS_DIR, CUSTOM_PACKS_DIR):
             path = base / "previews" / f"{pack_id}.png"
             if path.exists():
-                return FileResponse(path, media_type="image/png")
+                return FileResponse(
+                    path, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
         raise HTTPException(404, "not found")
 
     @app.post("/api/generate")
@@ -1098,7 +1150,11 @@ def create_app() -> FastAPI:
         path = job.out_dir / filename
         if not path.exists():
             raise HTTPException(404, "not found")
-        return FileResponse(path)
+        # 让 Cloudflare 边缘缓存接管贴纸/GIF——大陆访问不再回源香港。
+        # 重摇会覆盖同名文件，但前端展示一律带 ?t= 时间戳破缓存，互不影响。
+        return FileResponse(
+            path, headers={"Cache-Control": "public, max-age=86400"}
+        )
 
     return app
 

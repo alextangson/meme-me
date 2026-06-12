@@ -63,9 +63,11 @@
         <option value="unlocked">¥9.9 全套放开</option>
         <option value="custom">¥29.9 专属定制</option>
       </select>
-      <input id="codeN" type="number" value="1" min="1" max="50" style="width:64px">
+      <input id="codeN" type="number" value="1" min="1" max="50" style="width:64px" title="生成几个码">
+      <input id="codeUses" type="number" value="1" min="1" max="10000" style="width:80px" title="每码名额：1=卖的单次码，>1=活动码">
+      <input id="codeDays" type="number" value="0" min="0" style="width:72px" title="有效天数：0=永久">
       <button id="codeBtn">生成兑换码</button>
-      <span class="muted">收款确认后点这里发码，微信发给买家</span>
+      <span class="muted">名额=1 是卖的码；名额&gt;1 是限免活动码（发 /?code=XX 链接）</span>
     </div>
     <p id="codeOut"></p>
   </section>
@@ -124,7 +126,7 @@ function render(d) {
     <div class="stat"><b>${invite}</b><span>邀请链接复制</span></div>
     <div class="stat"><b class="accent">${redeemed}</b><span>兑换成功</span></div>`;
 
-  const m = d.monetize || { codes: {}, devices: { total: 0, paid: 0 } };
+  const m = d.monetize || { codes: {}, event: { uses: 0 }, devices: { total: 0, paid: 0 } };
   const cu = m.codes.unlocked || { total: 0, used: 0 };
   const cc = m.codes.custom || { total: 0, used: 0 };
   const revenue = (cu.used * 9.9 + cc.used * 29.9).toFixed(1);
@@ -133,7 +135,8 @@ function render(d) {
     <div class="stat"><b>${m.devices.total}</b><span>设备数</span></div>
     <div class="stat"><b class="accent">${m.devices.paid}</b><span>已付费设备</span></div>
     <div class="stat"><b>${cu.used}/${cu.total}</b><span>9.9 码 已用/已发</span></div>
-    <div class="stat"><b>${cc.used}/${cc.total}</b><span>29.9 码 已用/已发</span></div>`;
+    <div class="stat"><b>${cc.used}/${cc.total}</b><span>29.9 码 已用/已发</span></div>
+    <div class="stat"><b>${(m.event || {}).uses || 0}</b><span>活动码核销数</span></div>`;
 
   const packs = Object.entries(d.jobs.by_pack).sort((a, b) => b[1] - a[1]);
   const max = packs.length ? packs[0][1] : 1;
@@ -158,6 +161,8 @@ $('codeBtn').onclick = async () => {
   const fd = new FormData();
   fd.append('plan', $('codePlan').value);
   fd.append('n', $('codeN').value);
+  fd.append('uses', $('codeUses').value);
+  fd.append('days', $('codeDays').value);
   const key = encodeURIComponent(sessionStorage.getItem('admin_key') || '');
   const resp = await fetch('/api/admin/codes?key=' + key, { method: 'POST', body: fd });
   if (!resp.ok) { $('codeOut').textContent = '生成失败：' + resp.status; return; }

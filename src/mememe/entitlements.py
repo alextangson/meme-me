@@ -194,7 +194,16 @@ class Store:
             json.dumps(codes, ensure_ascii=False, indent=1), encoding="utf-8"
         )
 
-    def create_codes(self, plan: str, n: int) -> list[str]:
+    def create_codes(
+        self,
+        plan: str,
+        n: int,
+        *,
+        max_uses: int = 1,
+        expires_in_days: float = 0,
+        video_credits: int | None = None,
+    ) -> list[str]:
+        """单次码（卖的）和活动码（max_uses>1，限名额限时，沙龙/推广用）同一套。"""
         if plan not in PLAN_VIDEO_CREDITS:
             raise ValueError(f"unknown plan: {plan}")
         with self._lock:
@@ -206,13 +215,28 @@ class Store:
                 )
                 if code in codes:
                     continue
-                codes[code] = {
+                entry: dict = {
                     "plan": plan, "created_at": time.time(),
                     "used_by": "", "used_at": 0,
                 }
+                if max_uses > 1:
+                    entry["max_uses"] = max_uses
+                    entry["uses"] = 0
+                if expires_in_days > 0:
+                    entry["expires_at"] = time.time() + expires_in_days * 86400
+                if video_credits is not None:
+                    entry["video_credits"] = video_credits
+                codes[code] = entry
                 fresh.append(code)
             self._save_codes(codes)
             return fresh
+
+    def _apply_grant(self, rec: dict, plan: str, video_credits: int, code: str) -> None:
+        if _PLAN_RANK[plan] > _PLAN_RANK[rec["plan"]]:
+            rec["plan"] = plan  # 只升不降；重复兑换额度照加
+        rec["video_credits"] += video_credits
+        rec["redeemed"].append(code)
+        self._save(rec)
 
     def redeem(self, code: str, device: str) -> tuple[bool, str]:
         """成功返回 (True, plan)；失败返回 (False, 人话原因)。"""
@@ -221,20 +245,45 @@ class Store:
             entry = codes.get(code)
             if entry is None:
                 return False, "兑换码不存在，检查一下有没有抄错"
-            if entry["used_by"]:
-                if entry["used_by"] == device:
-                    return False, "这个码你已经兑换过啦"
+            expires = float(entry.get("expires_at") or 0)
+            if expires and time.time() > expires:
+                return False, "这个码已经过期啦"
+            rec = self._load(device)
+            if code in rec["redeemed"]:
+                return False, "这个码你已经兑换过啦"
+            max_uses = int(entry.get("max_uses", 1))
+            uses = int(entry.get("uses", 1 if entry.get("used_by") else 0))
+            if uses >= max_uses:
+                if max_uses > 1:
+                    return False, "名额已经被抢完啦"
                 return False, "这个码已经被用过了"
-            entry["used_by"] = device
+            entry["uses"] = uses + 1
+            if max_uses == 1:
+                entry["used_by"] = device
             entry["used_at"] = time.time()
             self._save_codes(codes)
-            rec = self._load(device)
             plan = entry["plan"]
-            if _PLAN_RANK[plan] > _PLAN_RANK[rec["plan"]]:
-                rec["plan"] = plan  # 只升不降；重复买码额度照加
-            rec["video_credits"] += PLAN_VIDEO_CREDITS[plan]
-            rec["redeemed"].append(code)
-            self._save(rec)
+            grant = int(entry.get("video_credits", PLAN_VIDEO_CREDITS[plan]))
+            self._apply_grant(rec, plan, grant, code)
+            return True, plan
+
+    def redeem_order(self, order_no: str, device: str, plan: str) -> tuple[bool, str]:
+        """爱发电订单核销：订单号一次性，权益与对应档位兑换码一致。"""
+        with self._lock:
+            codes = self._load_codes()
+            key = f"AFD-{order_no}"
+            entry = codes.get(key)
+            if entry is not None:
+                if entry.get("used_by") == device:
+                    return False, "这个订单你已经核销过啦"
+                return False, "这个订单已经被核销过了"
+            codes[key] = {
+                "plan": plan, "source": "afdian", "created_at": time.time(),
+                "used_by": device, "used_at": time.time(),
+            }
+            self._save_codes(codes)
+            rec = self._load(device)
+            self._apply_grant(rec, plan, PLAN_VIDEO_CREDITS[plan], key)
             return True, plan
 
     # ---- 后台汇总 ----
@@ -243,10 +292,16 @@ class Store:
         with self._lock:
             codes = self._load_codes()
             by_plan: dict[str, dict[str, int]] = {}
+            event = {"codes": 0, "uses": 0}
             for entry in codes.values():
+                if int(entry.get("max_uses", 1)) > 1:
+                    # 活动码是白嫖通道，单独记，不进收入口径
+                    event["codes"] += 1
+                    event["uses"] += int(entry.get("uses", 0))
+                    continue
                 row = by_plan.setdefault(entry["plan"], {"total": 0, "used": 0})
                 row["total"] += 1
-                row["used"] += 1 if entry["used_by"] else 0
+                row["used"] += 1 if entry.get("used_by") else 0
             devices = list(self.devices_dir.glob("*.json"))
             paid = 0
             for path in devices:
@@ -257,5 +312,6 @@ class Store:
                     continue
             return {
                 "codes": by_plan,
+                "event": event,
                 "devices": {"total": len(devices), "paid": paid},
             }

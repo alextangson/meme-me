@@ -46,8 +46,9 @@ LEADS_FILE = Path("out/leads.jsonl")
 EVENTS_FILE = Path("out/events.jsonl")  # 转化漏斗埋点（unlock_shown/unlock_free_click）
 DEVICES_DIR = Path("out/devices")  # 设备权益账本（定价/裂变的执行层）
 CODES_FILE = Path("out/codes.json")  # 兑换码：人工收款过渡期的变现通道
-# 收款入口（爱发电/收款页链接）；没配就引导加微信（contact-qr）
+# 收款入口（爱发电商品链接，9.9/29.9 各一条）；没配就引导加微信（contact-qr）
 PAY_URL = os.environ.get("MEMEME_PAY_URL", "")
+PAY_URL_CUSTOM = os.environ.get("MEMEME_PAY_URL_CUSTOM", "")
 DRAFTS_DIR = Path("out/drafts")  # AI 编剧对话落盘——部署重启不丢用户聊到一半的需求
 # B 端联系入口：放一张微信二维码图在这就会出现在 /custom 页（个人数据，不进 repo）
 CONTACT_QR_FILE = Path(os.environ.get("MEMEME_CONTACT_QR", "out/contact-qr.png"))
@@ -742,6 +743,7 @@ def create_app() -> FastAPI:
         """付费墙渲染数据：我的权益 + 站点收款入口。"""
         info = {
             "pay_url": PAY_URL,
+            "pay_url_custom": PAY_URL_CUSTOM or PAY_URL,
             "has_contact_qr": CONTACT_QR_FILE.exists(),
             "plan": "free",
             "video_credits": 0,

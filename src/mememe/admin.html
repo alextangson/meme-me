@@ -111,7 +111,8 @@ function render(d) {
   $('dash').style.display = 'block';
   $('updated').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
 
-  const shown = d.funnel.unlock_shown || 0, pay = d.funnel.pay_click || 0;
+  const shown = d.funnel.unlock_shown || 0;
+  const pay = (d.funnel.pay_click || 0) + (d.funnel.pay_click_99 || 0) + (d.funnel.pay_click_299 || 0);
   const invite = d.funnel.invite_copy || 0, redeemed = d.funnel.redeem_ok || 0;
   const rate = shown ? Math.round(pay / shown * 100) : 0;
   $('cards').innerHTML = `

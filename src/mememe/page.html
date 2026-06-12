@@ -759,8 +759,13 @@ async function fetchMe() {
 function renderPayZone(me) {
   const z = $('payZone');
   if (me.pay_url) {
-    z.innerHTML = `<a class="btn primary big" href="${me.pay_url}" target="_blank" rel="noopener" id="payGo">去付款，秒拿兑换码 →</a>`;
-    $('payGo').onclick = () => track('pay_click');
+    let html = `<a class="btn primary big" href="${me.pay_url}" target="_blank" rel="noopener" data-t="pay_click_99">¥9.9 全套放开 · 去付款 →</a>`;
+    if (me.pay_url_custom && me.pay_url_custom !== me.pay_url) {
+      html += `<a class="btn big" style="margin-top:8px" href="${me.pay_url_custom}" target="_blank" rel="noopener" data-t="pay_click_299">¥29.9 专属定制 · 去付款 →</a>`;
+    }
+    html += '<p class="privacy" style="margin-top:6px">付款后秒发兑换码，回来输码立即生效</p>';
+    z.innerHTML = html;
+    z.querySelectorAll('a[data-t]').forEach(a => { a.onclick = () => track(a.dataset.t); });
   } else if (me.has_contact_qr) {
     z.innerHTML = `<img src="/api/contact-qr" alt="联系主理人二维码" class="payqr">
       <p class="privacy">微信扫码加主理人，付款后秒发兑换码</p>`;

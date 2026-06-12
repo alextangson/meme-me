@@ -1045,11 +1045,16 @@ def test_referral_rewards_inviter_on_first_success(client):
 
 
 def test_me_exposes_pay_channel(client, monkeypatch):
-    monkeypatch.setattr(webapp, "PAY_URL", "https://afdian.example/memeplanet")
+    monkeypatch.setattr(webapp, "PAY_URL", "https://afdian.example/item/99")
     me = client.get("/api/me", params={"device": DEV}).json()
-    assert me["pay_url"] == "https://afdian.example/memeplanet"
+    assert me["pay_url"] == "https://afdian.example/item/99"
+    assert me["pay_url_custom"] == "https://afdian.example/item/99"  # 未配则回退
     assert me["plan"] == "free"
     assert me["daily_remaining"] > 0
+
+    monkeypatch.setattr(webapp, "PAY_URL_CUSTOM", "https://afdian.example/item/299")
+    me = client.get("/api/me", params={"device": DEV}).json()
+    assert me["pay_url_custom"] == "https://afdian.example/item/299"
 
 
 def test_admin_data_includes_monetize_summary(client, monkeypatch):

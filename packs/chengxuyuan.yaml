@@ -1,0 +1,115 @@
+# 程序员 — 码农圈梗剧本（圈层化内容策略：自嘲浓度最高的线上圈子）
+# 顺序即叙事：从需求降临到周五守线。前 8 个是免费层（最高 sendability 优先）。
+
+id: chengxuyuan
+name: 程序员
+description: 写代码人的 16 个真实瞬间，从「需求又改了」到「我本地是好的」
+version: 1
+language: zh
+style_id: doodle
+
+style: |
+  Q版三头身（chibi）贴纸插画风格，粗白色描边，背景必须纯白。
+  人物特征必须与参考照片一致并贯穿全套：发型、脸型、肤色、眼镜/配饰等标志性特征。
+  人物穿连帽衫或格子衫，道具是机械键盘、多块显示器、马克杯、冒烟的服务器，
+  黑眼圈与汗滴特效点缀。表情夸张、动作戏剧化，微信表情包审美。
+  文案以大号中文字体渲染在画面下方居中，字色深、带白边，清晰可读。
+
+memes:
+  # ---- 免费层（前 8 个，sendability 最高）----
+  - id: xuqiu-gai
+    caption: 需求又改了
+    expression: 目光呆滞，瞳孔地震
+    action: 盯着屏幕整个人石化碎裂
+    shot: 半身
+
+  - id: zai-gai-le
+    caption: 在改了在改了
+    expression: 慌张赔笑，额头冒汗
+    action: 双手化作残影狂敲键盘
+    shot: 半身
+
+  - id: shangxian
+    caption: 上线了！
+    expression: 如释重负的狂喜
+    action: 双手高举庆祝，身后屏幕放出烟花
+    shot: 半身
+
+  - id: bendi-haode
+    caption: 我本地是好的
+    expression: 一脸无辜，眨着真诚的眼睛
+    action: 摊手指着自己的电脑屏幕
+    shot: 半身
+
+  - id: zuchuan-daima
+    caption: 祖传代码，不敢动
+    expression: 瑟瑟发抖，冷汗直流
+    action: 小心翼翼捧着一坨缠满胶带摇摇欲坠的方块
+    shot: 半身
+
+  - id: chongqi
+    caption: 重启试试
+    expression: 高深莫测的微笑
+    action: 一根手指郑重按下巨大的电源键
+    shot: 半身
+
+  - id: juan-budong
+    caption: 卷不动了
+    expression: 生无可恋，眼神空洞
+    action: 整个人瘫在工位椅子上像融化了一样
+    shot: 全身
+
+  - id: xiaban
+    caption: 下班！
+    expression: 头也不回的纯粹快乐
+    action: 啪地合上电脑，背起包起跑冲刺
+    shot: 全身
+
+  # ---- 付费层（后 8 个）----
+  - id: bug-bukeneng
+    caption: 有bug？不可能
+    expression: 自信到眼镜反光
+    action: 抱臂叉腰，下巴微抬
+    shot: 半身
+
+  - id: kaihui-lixian
+    caption: 开会中，灵魂已离线
+    expression: 眼神放空，礼貌假笑
+    action: 端坐着点头，半透明的灵魂从头顶飘出
+    shot: 半身
+
+  - id: cehuan-guale
+    caption: 测试环境又挂了
+    expression: 翻白眼，嘴角抽搐
+    action: 对着冒烟的服务器无奈摊手
+    shot: 半身
+
+  - id: pao-tong
+    caption: 先跑通再说
+    expression: 闭眼一把梭的决绝
+    action: 闭着眼按下回车，身后警示灯狂闪
+    shot: 半身
+
+  - id: jia-xuqiu
+    caption: 加个需求很简单？
+    expression: 危险的假笑，太阳穴爆青筋
+    action: 微笑着缓缓举起扳手
+    shot: 半身
+
+  - id: wendang
+    caption: 文档？代码即文档
+    expression: 理直气壮，毫无愧疚
+    action: 叉腰把一摞纸扔进身边垃圾桶
+    shot: 半身
+
+  - id: oncall
+    caption: oncall中，勿cue
+    expression: 黑眼圈麻木，强撑清醒
+    action: 凌晨抱着手机和充电宝盘坐待命
+    shot: 半身
+
+  - id: zhouwu-bushangxian
+    caption: 周五不上线
+    expression: 前所未有的严肃
+    action: 伸出手指坚定地左右摇晃比出 NO
+    shot: 半身

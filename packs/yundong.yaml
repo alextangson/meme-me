@@ -7,7 +7,7 @@ name: 运动达人
 description: 健身撸铁人的 16 个高频瞬间，从开练到永远的最后一组
 version: 1
 language: zh
-style_id: pop
+style_id: anime
 
 # 全局风格块：每张 prompt 都注入，保证 16 张是同一个角色、同一种画风
 style: |

@@ -1307,8 +1307,8 @@ def test_pack_default_style_applied(client, tmp_path):
     job_id = resp.json()["job_id"]
     _wait_done(client, job_id)
     meta = _json.loads((tmp_path / job_id / "job.json").read_text())
-    assert meta["style"] == "pop"  # 运动达人 → 波普美漫
-    assert any("波普" in p for p in client.fake_provider.prompts)
+    assert meta["style"] == "anime"  # 运动达人 → 热血日漫
+    assert any("日系动漫" in p for p in client.fake_provider.prompts)
 
 
 def test_explicit_style_beats_pack_default(client, tmp_path):
@@ -1323,3 +1323,17 @@ def test_explicit_style_beats_pack_default(client, tmp_path):
     _wait_done(client, job_id)
     meta = _json.loads((tmp_path / job_id / "job.json").read_text())
     assert meta["style"] == "anime"
+
+
+def test_packs_sorted_by_popularity(client):
+    # 用得多的主题排到最前面；新圈层主题在列表里
+    for _ in range(2):
+        r = client.post(
+            "/api/generate",
+            files={"selfie": ("me.jpg", _selfie_bytes(), "image/jpeg")},
+            data={"pack_id": "ganfan"},
+        )
+        _wait_done(client, r.json()["job_id"])
+    ids = [p["id"] for p in client.get("/api/packs").json()]
+    assert ids[0] == "ganfan"  # 2 次使用 > 其他 0 次
+    assert "chengxuyuan" in ids and "youxidang" in ids

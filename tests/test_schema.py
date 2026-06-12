@@ -113,5 +113,5 @@ def test_pack_style_id_loads_and_defaults_empty():
     from mememe.core.schema import load_pack
 
     root = Path(__file__).parent.parent / "packs"
-    assert load_pack(root / "yundong.yaml").style_id == "pop"
+    assert load_pack(root / "yundong.yaml").style_id == "anime"
     assert load_pack(root / "shechu.yaml").style_id == ""  # 旗舰保持经典贴纸

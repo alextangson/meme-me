@@ -1,0 +1,115 @@
+# 游戏党 — 打游戏人的梗剧本（圈层化内容策略：开黑群天天用得上）
+# 顺序即叙事：从上号到菜就多练。前 8 个是免费层（最高 sendability 优先）。
+
+id: youxidang
+name: 游戏党
+description: 打游戏人的 16 个名场面，从「上号！」到「菜就多练」
+version: 1
+language: zh
+style_id: anime
+
+style: |
+  Q版三头身（chibi）贴纸插画风格，粗白色描边，背景必须纯白。
+  人物特征必须与参考照片一致并贯穿全套：发型、脸型、肤色、眼镜/配饰等标志性特征。
+  人物戴游戏耳机，道具是发光的机械键盘、鼠标、手柄、能量饮料罐，
+  胜负的情绪特效（火花、闪电、乌云）点缀。表情夸张、动作戏剧化，微信表情包审美。
+  文案以大号中文字体渲染在画面下方居中，字色深、带白边，清晰可读。
+
+memes:
+  # ---- 免费层（前 8 个，sendability 最高）----
+  - id: shanghao
+    caption: 上号！
+    expression: 摩拳擦掌，眼里有光
+    action: 一把抓起鼠标戴上耳机，气势拉满
+    shot: 半身
+
+  - id: zuihou-yiba
+    caption: 最后一把
+    expression: 信誓旦旦，毫无说服力
+    action: 举手发誓，身后窗外天已蒙蒙亮
+    shot: 半身
+
+  - id: yingle
+    caption: 赢了！
+    expression: 仰天狂喜
+    action: 双臂高举，连人带椅子向后仰
+    shot: 半身
+
+  - id: lianggui
+    caption: 又连跪了
+    expression: 怀疑人生，灵魂破碎
+    action: 抱头伏在键盘上一动不动
+    shot: 半身
+
+  - id: duiyou-ne
+    caption: 队友呢？
+    expression: 茫然又无助
+    action: 一个人左右张望，头顶冒出问号
+    shot: 半身
+
+  - id: kaigua
+    caption: 对面开挂了吧
+    expression: 气到五官移位
+    action: 指着屏幕暴怒，头顶蹿出火苗
+    shot: 半身
+
+  - id: wenzhu
+    caption: 稳住，能赢
+    expression: 强装镇定，手心冒汗
+    action: 一手扶住身边人的肩，一手比稳住的手势
+    shot: 半身
+
+  - id: tangying
+    caption: 躺赢，舒服
+    expression: 惬意得不行
+    action: 翘着腿瘫在电竞椅上嗑瓜子
+    shot: 全身
+
+  # ---- 付费层（后 8 个）----
+  - id: wangka
+    caption: 网卡了
+    expression: 抓狂，青筋暴起
+    action: 双手疯狂拍打路由器
+    shot: 半身
+
+  - id: bie-songle
+    caption: 别送了！
+    expression: 恨铁不成钢
+    action: 捂着脸从指缝里偷看屏幕
+    shot: 半身
+
+  - id: yixue
+    caption: 一血拿下
+    expression: 得意挑眉
+    action: 对着冒烟的鼠标吹了口气
+    shot: 半身
+
+  - id: gou-juesaiquan
+    caption: 苟到决赛圈
+    expression: 紧张屏息，眼神警惕
+    action: 趴在草丛里只露出半个头
+    shot: 全身
+
+  - id: lingchong
+    caption: 零充党的骄傲
+    expression: 骄傲又心酸的笑
+    action: 一手叉腰一手展示空空的钱包
+    shot: 半身
+
+  - id: ma-han-chifan
+    caption: 妈喊吃饭，先挂了
+    expression: 慌张回头应声
+    action: 头转向身后喊话，双手还粘在键盘上
+    shot: 半身
+
+  - id: zhebo-wobei
+    caption: 这波我背
+    expression: 大度认锅，问心无愧
+    action: 主动高举一口大黑锅
+    shot: 半身
+
+  - id: cai-jiu-duolian
+    caption: 菜就多练
+    expression: 贱兮兮的嘲讽笑
+    action: 摊手耸肩，嘴角疯狂上扬
+    shot: 半身

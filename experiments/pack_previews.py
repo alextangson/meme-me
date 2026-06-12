@@ -21,7 +21,10 @@ from mememe.core.schema import load_pack
 
 ROOT = Path(__file__).parent.parent
 DEFAULT_FACE = ROOT / "out" / "demo" / "demo-face-f.png"
-HUMAN_PACKS = ["shechu", "yundong", "yinyang", "lianai", "ganfan", "qimo", "hajimi"]
+HUMAN_PACKS = [
+    "shechu", "yundong", "yinyang", "lianai", "ganfan", "qimo", "hajimi",
+    "chengxuyuan", "youxidang",
+]
 
 
 def _provider_chain():

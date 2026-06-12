@@ -7,11 +7,10 @@ same identity instruction, paired with the same reference photo at call time.
 from mememe.core.schema import Meme, Pack
 from mememe.core.styles import CAPTION_STYLES, STYLES
 
+# 只留深色经典款（用户拍板：彩色字体不好看）；想要彩色走显式 caption_style=cute
 _CAPTION_VARIANTS = [
     "大号中文手写体，字色深、带白色描边，端正居中。",
-    "超粗黑体大字，白色描边外加细黑外框，冲击力强。",
-    "活泼的手写体，字略带倾斜、大小错落，深色带白边。",
-    "圆润的卡通手绘字体，彩色描边，俏皮可爱。",
+    "超粗黑体大字，白色描边外加细黑外框，经典梗图字体，冲击力强。",
 ]
 
 _IDENTITY_BLOCKS = {

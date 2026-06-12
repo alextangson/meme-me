@@ -686,9 +686,18 @@ def create_app() -> FastAPI:
     def list_packs() -> list[dict]:
         # 公共列表只含官方剧本；定制剧本仅创建者凭链接经 /api/packs/{id} 取
         packs = [_pack_info(p, False) for p in sorted(PACKS_DIR.glob("*.yaml"))]
-        # 旗舰最前，新投稿按字母序殿后
-        order = {"shechu": 0, "qinglv": 1, "maomi": 2, "gouzi": 3, "yinyang": 4, "lianai": 5, "ganfan": 6, "qimo": 7, "hajimi": 8}
-        packs.sort(key=lambda p: (order.get(p["id"], 99), p["id"]))
+        # 人气优先：用得多的主题排前面（与画风弹窗同一套逻辑）；
+        # 平局走策展序（旗舰冷启动在前），新投稿按字母序殿后
+        order = {
+            "shechu": 0, "yundong": 1, "chengxuyuan": 2, "youxidang": 3,
+            "qinglv": 4, "maomi": 5, "gouzi": 6, "yinyang": 7,
+            "lianai": 8, "ganfan": 9, "qimo": 10, "hajimi": 11,
+        }
+        uses: dict[str, int] = {}
+        for job in jobs.values():
+            if job.pack_id:
+                uses[job.pack_id] = uses.get(job.pack_id, 0) + 1
+        packs.sort(key=lambda p: (-uses.get(p["id"], 0), order.get(p["id"], 99), p["id"]))
         return packs
 
     @app.get("/api/packs/{pack_id}")

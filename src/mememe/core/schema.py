@@ -11,7 +11,8 @@ FREE_MEME_COUNT = 8
 
 class Meme(BaseModel):
     id: str = Field(min_length=1)
-    caption: str = Field(min_length=1)
+    # 240px 贴纸的可读上限：门控过的官方包最长 12 字，14 只拦跑飞的长句
+    caption: str = Field(min_length=1, max_length=14)
     expression: str = Field(min_length=1)
     action: str = Field(min_length=1)
     shot: str = Field(min_length=1)

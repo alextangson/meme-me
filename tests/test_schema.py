@@ -64,6 +64,16 @@ def test_missing_caption_rejected():
         Pack.model_validate(data)
 
 
+def test_overlong_caption_rejected():
+    """240px 贴纸印不下长句——定制出稿跑飞的文案要在 schema 层拦住（会触发重试修正）。"""
+    data = _minimal_pack_dict()
+    data["memes"][0]["caption"] = "这句话实在是太长了根本印不到表情包上"  # 18 字
+    with pytest.raises(ValidationError):
+        Pack.model_validate(data)
+    data["memes"][0]["caption"] = "oncall中，勿cue"  # 12 字，门控过的官方包上限
+    assert Pack.model_validate(data).memes[0].caption == "oncall中，勿cue"
+
+
 def test_empty_memes_rejected():
     data = _minimal_pack_dict()
     data["memes"] = []

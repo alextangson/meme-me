@@ -107,20 +107,14 @@
     <div class="label">能定制什么 · 全都可以聊出来</div>
     <div class="uses" style="grid-template-columns:repeat(3,1fr)">
       <div class="use"><b>梗和文案</b><p>你的口头禅、你们的暗号、品牌口号，16 个梗全部为你定制；生成后每张还能单独改字</p></div>
-      <div class="use"><b>文字样式</b><p>手写、粗梗体、圆萌体随心换；默认一套里自动混搭四种字形，不呆板</p></div>
+      <div class="use"><b>文字样式</b><p>手写、粗梗体、圆萌体随心换；默认整套统一一种经典深色字，干净不花</p></div>
       <div class="use"><b>动图动作</b><p>每张都能动起来，动作由你一句话指定：比如「举着咖啡杯慢动作干杯」</p></div>
     </div>
   </div>
 
   <div class="card soft">
-    <div class="label">画风随便挑 · 同一张脸，五种宇宙</div>
-    <div class="stylerow">
-      <figure><img src="/api/pack-preview/shechu" loading="lazy" alt="经典贴纸画风示例"><figcaption>经典贴纸</figcaption></figure>
-      <figure><img src="/api/pack-preview/style-bojack" loading="lazy" alt="马男扁平画风示例"><figcaption>马男扁平</figcaption></figure>
-      <figure><img src="/api/pack-preview/style-anime" loading="lazy" alt="日漫画风示例"><figcaption>日漫</figcaption></figure>
-      <figure><img src="/api/pack-preview/style-mochi" loading="lazy" alt="软糯手办画风示例"><figcaption>软糯手办</figcaption></figure>
-      <figure><img src="/api/pack-preview/style-pixel" loading="lazy" alt="像素画风示例"><figcaption>像素</figcaption></figure>
-    </div>
+    <div class="label" id="styleGalleryLabel">画风随便挑 · 同一张脸，十三种宇宙</div>
+    <div class="stylerow" id="styleGallery"></div>
     <p class="hint" style="margin-top:8px">生成完成后点「换个画风再来一套」，同一套梗一键换宇宙。</p>
   </div>
 
@@ -187,6 +181,18 @@ function report(name, detail) {
 }
 window.addEventListener('error', (e) => report('js_error_custom', `${e.message} @ ${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', (e) => report('js_reject_custom', e.reason && (e.reason.message || e.reason)));
+
+// 画风画廊动态拉取——以后上新画风这页自动跟上，不再出现"只显示5种"
+(async () => {
+  try {
+    const d = await (await fetch('/api/styles')).json();
+    const all = [{ id: 'classic', name: '经典贴纸' }, ...d.styles];
+    $('styleGallery').innerHTML = all.map(s =>
+      `<figure><img src="/api/pack-preview/style-${s.id}" loading="lazy" alt="${s.name}画风示例"><figcaption>${s.name}</figcaption></figure>`
+    ).join('');
+    $('styleGalleryLabel').textContent = `画风随便挑 · 同一张脸，${all.length} 种宇宙`;
+  } catch (_) {}  // 拉不到就保持空画廊，不影响定制主流程
+})();
 
 function showToast(msg) {
   const t = $('toast');

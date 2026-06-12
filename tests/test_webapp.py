@@ -1248,3 +1248,16 @@ def test_video_usage_records_tokens(client, tmp_path, monkeypatch):
     assert u["total"]["videos"] == 1
     assert u["total"]["video_tokens"] == 27000
     assert 0.40 <= u["total"]["cost"] <= 0.41  # 27000/1000 × 0.015
+
+
+def test_caption_style_consistent_within_job(client):
+    # 同一任务 8 张 + 重摇都拿同一种文字风格（套内不再混排）
+    job_id = _animated_job(client)
+    client.post(f"/api/jobs/{job_id}/retry/3")
+    _wait_done(client, job_id)
+    suffixes = {
+        p.split("【文字样式】")[1]
+        for p in client.fake_provider.prompts
+        if "【文字样式】" in p
+    }
+    assert len(suffixes) == 1

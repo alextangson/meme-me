@@ -311,12 +311,22 @@ def _rebuild_collage(job: Job) -> None:
     job.collage_url = f"/files/{job.id}/collage.png"
 
 
+def _caption_seed(job: Job) -> int:
+    """文字风格一套一致：种子取自 job id——套与套之间有变化，
+    同任务的重摇/续生成永远拿到同一种字体。"""
+    try:
+        return int(job.id[:8], 16)
+    except ValueError:
+        return 0
+
+
 def _generate_one(job: Job, provider: ImageProvider, pos: int) -> None:
     """生成单张：主力上游失败时自动换另一家补一次，不连累整套。"""
     index = pos + 1
     meme = job.pack.memes[pos]
     prompt = compile_meme(
-        job.pack, meme, style=job.style, caption_style=job.caption_style
+        job.pack, meme, style=job.style, caption_style=job.caption_style,
+        caption_seed=_caption_seed(job),
     )
     with job.lock:
         job.images[pos]["status"] = "running"
@@ -473,6 +483,7 @@ def _run_retry(
             caption_override=caption,
             style=job.style,
             caption_style=job.caption_style,
+            caption_seed=_caption_seed(job),
         )
         raw = provider.generate(prompt, job.selfie)
         _log_event(

@@ -31,8 +31,10 @@ _PROMPT_TEMPLATE = """\
 
 【主体一致性】{identity}
 
-【画幅与构图】正方形 1:1。角色居中、竖直端正不倾斜，主体占画面 70% 以上；
-无论什么镜头，脸部都要画得足够大、五官清晰可辨——和参考照片的相似度是第一优先级。
+【画幅与构图】正方形 1:1。角色居中、竖直端正不倾斜，主体占画面 70% 以上。
+镜头景别严格按下方【本张内容】的「镜头」执行：特写让脸占大半；半身要带上手势；
+全身要有完整姿态——任何景别下脸部都要五官清晰可辨，和参考照片的相似度是第一优先级。
+动作和姿态要演出来：肢体语言夸张、有戏剧张力，这是表情包的灵魂。
 只保留{subject_word}角色与文案，绝对不要保留或重绘参考照片的背景，
 背景必须是纯白色——不要任何场景、房间、家具、风景；若下方内容描述里出现地点或环境，
 只用小道具和姿态示意，不画环境。
@@ -55,6 +57,7 @@ def compile_meme(
     *,
     style: str | None = None,
     caption_style: str | None = None,
+    caption_seed: int = 0,
 ) -> str:
     prompt = _PROMPT_TEMPLATE.format(
         subject_word=_SUBJECT_WORD[pack.subject],
@@ -74,10 +77,11 @@ def compile_meme(
     if caption_style and caption_style in CAPTION_STYLES:
         prompt += "\n【文字样式】画面文案改用：" + CAPTION_STYLES[caption_style]["block"]
     else:
-        idx = next((i for i, m in enumerate(pack.memes) if m.id == meme.id), 0)
+        # 文字风格一套一致（用户反馈：套内混排像拼凑）；种子按任务给，
+        # 套与套之间仍有变化，同任务重摇/续生成稳定不换
         prompt += (
             "\n【文字样式】画面文案改用："
-            + _CAPTION_VARIANTS[idx % len(_CAPTION_VARIANTS)]
+            + _CAPTION_VARIANTS[caption_seed % len(_CAPTION_VARIANTS)]
         )
     return prompt
 

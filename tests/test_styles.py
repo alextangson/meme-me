@@ -40,15 +40,15 @@ def test_unknown_style_ignored():
     )
 
 
-def test_default_caption_rendering_varies_by_meme_index():
+def test_default_caption_rendering_uniform_within_set_varies_by_seed():
+    # 文字风格一套一致（套内混排像拼凑）；种子不同的两套才换风格
     pack = load_pack(PACKS_DIR / "shechu.yaml")
-    p0 = compile_meme(pack, pack.memes[0])
-    p1 = compile_meme(pack, pack.memes[1])
+    p0 = compile_meme(pack, pack.memes[0], caption_seed=7)
+    p1 = compile_meme(pack, pack.memes[1], caption_seed=7)
     assert "【文字样式】" in p0 and "【文字样式】" in p1
-    assert p0.split("【文字样式】")[1] != p1.split("【文字样式】")[1]
-    # 轮换有周期：第 0 与第 4 个相同
-    p4 = compile_meme(pack, pack.memes[4])
-    assert p0.split("【文字样式】")[1] == p4.split("【文字样式】")[1]
+    assert p0.split("【文字样式】")[1] == p1.split("【文字样式】")[1]
+    q0 = compile_meme(pack, pack.memes[0], caption_seed=8)
+    assert p0.split("【文字样式】")[1] != q0.split("【文字样式】")[1]
 
 
 def test_explicit_caption_style_is_uniform():

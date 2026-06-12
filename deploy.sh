@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Deploy to production VDS (meme-planet.com).
-# Requires SSH alias `memeplanet-vds` in ~/.ssh/config (local machine only).
+# Deploy to production server (meme-planet.com), now on the 香港 ECS.
+# Requires SSH alias `memeplanet-hk` in ~/.ssh/config (local machine only).
+# Old Seattle VDS (`memeplanet-vds`) kept as a cold standby — its tunnel is stopped.
+# Override target with MEMEPLANET_DEPLOY_HOST=memeplanet-vds to push to the standby.
 #
 # NEVER add --delete: packs/custom/ and out/ on the server hold production
 # user data. packs/custom/ is excluded for the same reason — local copies
@@ -8,7 +10,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "==> rsync -> memeplanet-vds:/opt/memeplanet/"
+TARGET="${MEMEPLANET_DEPLOY_HOST:-memeplanet-hk}"
+
+echo "==> rsync -> ${TARGET}:/opt/memeplanet/"
 rsync -avz \
   --exclude '.git' \
   --exclude 'out' \
@@ -18,10 +22,10 @@ rsync -avz \
   --exclude 'packs/custom' \
   --exclude '.env' \
   --exclude '.DS_Store' \
-  ./ memeplanet-vds:/opt/memeplanet/
+  ./ "${TARGET}:/opt/memeplanet/"
 
 echo "==> restart memeplanet.service"
-ssh memeplanet-vds 'systemctl restart memeplanet && systemctl is-active memeplanet'
+ssh "$TARGET" 'systemctl restart memeplanet && systemctl is-active memeplanet'
 
 echo "==> wait for app startup"
 sleep 5

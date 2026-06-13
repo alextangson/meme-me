@@ -617,25 +617,44 @@ async function errMessage(resp) {
 }
 
 // ---- 生成 ----
+// 后端只在「并发名额满」时返回 429（日限走 402、定制门 402、超大 413），
+// 所以 429 可安全地当排队信号：自动等位重试，别让一屋子人盯着报错手点。
+const GEN_QUEUE_MAX_TRIES = 24;  // 每次等 ~3-5.5s，最多排 ~2 分钟覆盖现场出图节奏
+function buildGenFd() {
+  const fd = new FormData();
+  fd.append('selfie', selfie);
+  fd.append('pack_id', packId);
+  if (currentStyle) fd.append('style', currentStyle);
+  fd.append('device', deviceId());
+  const ref = localStorage.getItem(REF_KEY);
+  if (ref) fd.append('ref', ref);
+  return fd;
+}
+async function postGenerateQueued() {
+  for (let attempt = 0; ; attempt++) {
+    const resp = await fetch('/api/generate', { method: 'POST', body: buildGenFd() });
+    if (resp.status !== 429 || attempt >= GEN_QUEUE_MAX_TRIES) return resp;
+    // 并发满：排队等空位，加随机抖动，避免几十个客户端同一刻一窝蜂重试
+    $('go').textContent = '前面还有人，排队中…';
+    await new Promise(r => setTimeout(r, 3000 + Math.random() * 2500));
+  }
+}
 $('go').onclick = async () => {
   if (!selfie) { showToast('先上传一张照片'); return; }
   if (!packId) { showToast('先选一套表情主题'); return; }
+  const goLabel = $('go').textContent;
   $('go').disabled = true;
   try {
-    const fd = new FormData();
-    fd.append('selfie', selfie);
-    fd.append('pack_id', packId);
-    if (currentStyle) fd.append('style', currentStyle);
-    fd.append('device', deviceId());
-    const ref = localStorage.getItem(REF_KEY);
-    if (ref) fd.append('ref', ref);
-    const resp = await fetch('/api/generate', { method: 'POST', body: fd });
+    const resp = await postGenerateQueued();
     if (!resp.ok) {
-      showToast(await errMessage(resp));
+      showToast(resp.status === 429
+        ? '现在人有点多，稍等一下再点～'
+        : await errMessage(resp));
       if (resp.status === 402) {
         const p = allPacks.find(x => x.id === packId);
         openPaywall(p && p.custom ? 'custom' : 'daily');
       }
+      $('go').textContent = goLabel;
       $('go').disabled = false;
       return;
     }
@@ -653,6 +672,7 @@ $('go').onclick = async () => {
   } catch (err) {
     report('generate_fail', err && (err.message || err));
     showToast('网络好像有点问题，再试一次');
+    $('go').textContent = goLabel;
     $('go').disabled = false;
   }
 };

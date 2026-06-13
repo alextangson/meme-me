@@ -37,6 +37,16 @@ def test_normalize_selfie_rejects_non_image():
         normalize_selfie(b"this is not an image at all")
 
 
+def test_normalize_selfie_rejects_decompression_bomb(monkeypatch):
+    import mememe.core.postprocess as pp
+
+    # 把上限调到极小，用普通小图验证"声明尺寸超限即拒"——不真分配上 GB 内存。
+    # 防的是几 KB 的图声明成上亿像素、解码时把小机 OOM 打挂的炸弹。
+    monkeypatch.setattr(pp, "MAX_SELFIE_PIXELS", 100)
+    with pytest.raises(ValueError):
+        normalize_selfie(_synthetic_image(800, 600))  # 480000 px ≫ 100
+
+
 def test_normalize_selfie_handles_heic():
     pillow_heif = pytest.importorskip("pillow_heif")
     pillow_heif.register_heif_opener()

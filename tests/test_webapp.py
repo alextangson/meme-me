@@ -388,6 +388,21 @@ def test_generate_returns_429_when_at_capacity(client, monkeypatch):
     assert resp.status_code == 429
 
 
+def test_generate_releases_slot_on_bad_upload(client, monkeypatch):
+    import threading as _t
+
+    # 坏图/超大/超额等早退也必须把名额还回去，否则前端排队重试会把名额泄漏耗尽
+    sem = _t.Semaphore(1)
+    monkeypatch.setattr(webapp, "_GEN_SLOTS", sem)
+    resp = client.post(
+        "/api/generate",
+        files={"selfie": ("evil.txt", b"not an image", "text/plain")},
+        data={"pack_id": "shechu"},
+    )
+    assert resp.status_code == 400
+    assert sem.acquire(blocking=False) is True  # 名额已归还，没泄漏
+
+
 def test_logo_served(client):
     resp = client.get("/logo.png")
     assert resp.status_code == 200

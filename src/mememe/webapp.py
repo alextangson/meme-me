@@ -808,7 +808,7 @@ def create_app() -> FastAPI:
         except Exception as e:
             history.pop()
             _log_server_error("agent_chat", e, draft_id=draft_id)
-            raise HTTPException(502, f"策划暂时掉线了：{e}")
+            raise HTTPException(502, "策划暂时掉线了，稍等再聊一句～")
         history.append({"role": "assistant", "content": out["raw"]})
         _persist_draft(draft_id, history)
         return {
@@ -999,87 +999,91 @@ def create_app() -> FastAPI:
         ):
             _log_event("custom_gate", device=device, pack_id=pack_id)
             raise HTTPException(402, "专属定制主题需要定制版兑换码才能生成")
-        raw_upload = selfie.file.read(MAX_UPLOAD_BYTES + 1)
-        if len(raw_upload) > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, "照片太大了，请压缩到 12MB 以内再试")
-        try:
-            selfie_bytes = normalize_selfie(raw_upload)
-        except ValueError:
-            raise HTTPException(400, "这看起来不是一张图片，换张照片试试")
-        # 名额满了就婉拒，别让并发把 1G 小机撑爆
+        # 抢并发名额提到读图之前：队满时廉价婉拒，不必先把上传解码/缩放一遍
+        # （前端会自动排队重试，否则一屋子人的重试会拿 normalize 把 2 核机 CPU 吃满）
         if not _GEN_SLOTS.acquire(blocking=False):
             raise HTTPException(429, "正在帮前面的小伙伴生成，请过一会儿再试～")
-        # 每日套数限额：防"无限换画风"烧穿预算；网页端必带 device，
-        # 不带的（curl/旧端）不限——硬护栏始终是上面的全局并发
-        if entitlements.valid_device(device):
-            allowed, msg = store.charge_generation(
-                device, ref if entitlements.valid_device(ref) else ""
-            )
-            if not allowed:
-                _GEN_SLOTS.release()
-                _log_event("daily_gate", device=device)
-                raise HTTPException(402, msg)
-        else:
-            device = ""
-        pack = load_pack(pack_path)
-        # 主题×画风：用户没显式选画风时，用主题推荐的画风（aha 的第一眼）；
-        # "classic" 是显式选经典贴纸的哨兵值——可以压过主题推荐
-        if style == "classic":
-            style = ""
-        elif not style and pack.style_id in STYLES:
-            style = pack.style_id
-        job_id = uuid.uuid4().hex[:12]
-        out_dir = OUTPUT_ROOT / job_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        _save_pack_snapshot(out_dir, pack)  # 任务自带剧本，源 yaml 丢了也能转动图/重摇/续生成
-        job = Job(
-            id=job_id,
-            pack=pack,
-            selfie=selfie_bytes,
-            out_dir=out_dir,
-            full=full,
-            style=style,
-            caption_style=caption_style,
-            pack_id=pack_id,
-            pack_name=pack.name,
-            created_at=time.time(),
-            provider_name=provider,
-            device=device,
-        )
-        job.images = [
-            {
-                "index": i + 1,
-                "id": m.id,
-                "caption": m.caption,
-                "status": "pending",
-                "url": "",
-                "gif_url": "",
-                "anim_status": "none",
-                "anim_url": "",
-            }
-            for i, m in enumerate(job.memes)
-        ]
-        jobs[job_id] = job
-        _save_meta(job)
-
-        def _run_and_release() -> None:
+        try:
+            raw_upload = selfie.file.read(MAX_UPLOAD_BYTES + 1)
+            if len(raw_upload) > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, "照片太大了，请压缩到 12MB 以内再试")
             try:
-                _run_generation(job, _make_provider(provider))
-            finally:
-                _GEN_SLOTS.release()
-            if not job.device:
-                return
-            if job.status == "done":
-                referrer = store.note_job_done(job.device)
-                if referrer:  # 被邀的人首套出图，邀请人立得视频额度
-                    _log_event(
-                        "referral_reward",
-                        device=referrer, from_device=job.device, job_id=job.id,
-                    )
+                selfie_bytes = normalize_selfie(raw_upload)
+            except ValueError:
+                raise HTTPException(400, "这看起来不是一张图片，换张照片试试")
+            # 每日套数限额：防"无限换画风"烧穿预算；网页端必带 device，
+            # 不带的（curl/旧端）不限——硬护栏始终是上面的全局并发
+            if entitlements.valid_device(device):
+                allowed, msg = store.charge_generation(
+                    device, ref if entitlements.valid_device(ref) else ""
+                )
+                if not allowed:
+                    _log_event("daily_gate", device=device)
+                    raise HTTPException(402, msg)
             else:
-                store.refund_generation(job.device)  # 整套全失败不扣当日额度
+                device = ""
+            pack = load_pack(pack_path)
+            # 主题×画风：用户没显式选画风时，用主题推荐的画风（aha 的第一眼）；
+            # "classic" 是显式选经典贴纸的哨兵值——可以压过主题推荐
+            if style == "classic":
+                style = ""
+            elif not style and pack.style_id in STYLES:
+                style = pack.style_id
+            job_id = uuid.uuid4().hex[:12]
+            out_dir = OUTPUT_ROOT / job_id
+            out_dir.mkdir(parents=True, exist_ok=True)
+            _save_pack_snapshot(out_dir, pack)  # 任务自带剧本，源 yaml 丢了也能转动图/重摇/续生成
+            job = Job(
+                id=job_id,
+                pack=pack,
+                selfie=selfie_bytes,
+                out_dir=out_dir,
+                full=full,
+                style=style,
+                caption_style=caption_style,
+                pack_id=pack_id,
+                pack_name=pack.name,
+                created_at=time.time(),
+                provider_name=provider,
+                device=device,
+            )
+            job.images = [
+                {
+                    "index": i + 1,
+                    "id": m.id,
+                    "caption": m.caption,
+                    "status": "pending",
+                    "url": "",
+                    "gif_url": "",
+                    "anim_status": "none",
+                    "anim_url": "",
+                }
+                for i, m in enumerate(job.memes)
+            ]
+            jobs[job_id] = job
+            _save_meta(job)
 
-        threading.Thread(target=_run_and_release, daemon=True).start()
+            def _run_and_release() -> None:
+                try:
+                    _run_generation(job, _make_provider(provider))
+                finally:
+                    _GEN_SLOTS.release()
+                if not job.device:
+                    return
+                if job.status == "done":
+                    referrer = store.note_job_done(job.device)
+                    if referrer:  # 被邀的人首套出图，邀请人立得视频额度
+                        _log_event(
+                            "referral_reward",
+                            device=referrer, from_device=job.device, job_id=job.id,
+                        )
+                else:
+                    store.refund_generation(job.device)  # 整套全失败不扣当日额度
+
+            threading.Thread(target=_run_and_release, daemon=True).start()
+        except Exception:
+            _GEN_SLOTS.release()  # 任何早退都还回名额；成功路径由后台线程 finally 释放
+            raise
         return {"job_id": job_id}
 
     @app.get("/api/history")

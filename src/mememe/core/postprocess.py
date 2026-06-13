@@ -19,6 +19,8 @@ except ImportError:
 STICKER_SIZE = 240
 GIF_MAX_BYTES = 500 * 1024
 SELFIE_MAX_EDGE = 1536  # 上传图归一化上限，省内存也够供应商用
+# 解压炸弹上限：80MP 覆盖任何真机相机/大全景，挡住几 KB 声明成上亿像素的恶意图
+MAX_SELFIE_PIXELS = 80_000_000
 
 
 def _open_rgba(image_bytes: bytes) -> Image.Image:
@@ -110,6 +112,10 @@ def normalize_selfie(image_bytes: bytes) -> bytes:
     """
     try:
         img = Image.open(io.BytesIO(image_bytes))
+        # 解压炸弹防护：声明尺寸过大就拒（读头即得，不解码全图）——别让几 KB 的图
+        # 解成上亿像素把 2 核小机 OOM 打挂。匿名公网上传，这是 .load() 前的硬护栏。
+        if img.size[0] * img.size[1] > MAX_SELFIE_PIXELS:
+            raise ValueError("图片像素过大")
         img.load()
     except Exception as e:
         raise ValueError("无法识别为图片") from e

@@ -37,6 +37,7 @@ from mememe.core.postprocess import (
 )
 from mememe.core.schema import Pack, load_pack
 from mememe.core.styles import STYLES
+from mememe.core import ratelimit
 from mememe.providers.base import ImageProvider
 from mememe import entitlements
 
@@ -61,6 +62,13 @@ MAX_UPLOAD_BYTES = 12 * 1024 * 1024  # 单张上传上限，挡 OOM-by-upload
 ADMIN_KEY = os.environ.get("MEMEME_ADMIN_KEY", "")  # 设了才开后台；/admin?key=
 MAX_CONCURRENT_GENERATIONS = int(os.environ.get("MEMEME_MAX_CONCURRENT", "3"))
 _GEN_SLOTS = threading.Semaphore(MAX_CONCURRENT_GENERATIONS)
+# 开放的 LLM 入口（编剧 chat/draft）按 IP 日限——挡脚本批量薅 DeepSeek/图像额度。
+# 设得宽：沙龙同 IP 多人基本无感，只熔断极端批量；draft 还会触发图像生成，限更严。
+# 沙龙当天可临时调高这两个 env。轮数/长度上限防单会话把对话历史怼长烧 token。
+AGENT_CHAT_DAILY_IP = int(os.environ.get("MEMEME_AGENT_CHAT_DAILY_IP", "80"))
+AGENT_DRAFT_DAILY_IP = int(os.environ.get("MEMEME_AGENT_DRAFT_DAILY_IP", "20"))
+AGENT_MSG_MAXLEN = int(os.environ.get("MEMEME_AGENT_MSG_MAXLEN", "512"))
+AGENT_MAX_TURNS = int(os.environ.get("MEMEME_AGENT_MAX_TURNS", "20"))
 # 中转站 Gemini 主力（包月边际成本低）；即梦按量 ¥0.2/张 做每张自动兜底
 DEFAULT_PROVIDER = os.environ.get("MEMEME_PROVIDER", "gemini")
 GEN_FANOUT = int(os.environ.get("MEMEME_GEN_FANOUT", "4"))  # 单任务内并发出图张数
@@ -632,6 +640,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     jobs: dict[str, Job] = _load_jobs()
     store = entitlements.Store(DEVICES_DIR, CODES_FILE)
+    agent_limiter = ratelimit.DailyIPLimiter()  # 编剧 chat/draft 的 IP 日限护栏
 
     # no-cache：否则浏览器启发式缓存让改版后的页面迟迟到不了用户手里
     @app.get("/", response_class=HTMLResponse)
@@ -769,7 +778,17 @@ def create_app() -> FastAPI:
             _log_server_error("draft_persist", e, draft_id=draft_id)
 
     @app.post("/api/agent/chat")
-    def agent_chat(message: str = Form(...), draft_id: str = Form("")) -> dict:
+    def agent_chat(
+        request: Request, message: str = Form(...), draft_id: str = Form("")
+    ) -> dict:
+        message = message.strip()
+        if not message:
+            raise HTTPException(400, "说点什么吧～")
+        if len(message) > AGENT_MSG_MAXLEN:
+            raise HTTPException(400, f"消息太长啦，{AGENT_MSG_MAXLEN} 字以内说重点～")
+        if not agent_limiter.allow("chat", ratelimit.client_ip(request), AGENT_CHAT_DAILY_IP):
+            _log_event("agent_ip_gate", scope="chat")
+            raise HTTPException(429, "今天聊得有点多啦，明天再来定制～")
         if not draft_id:
             draft_id = uuid.uuid4().hex[:12]
             drafts[draft_id] = []
@@ -780,6 +799,9 @@ def create_app() -> FastAPI:
                 drafts[draft_id] = history
         if history is None:
             raise HTTPException(404, "对话不存在，刷新页面重新开始")
+        # 轮数上限：防把对话历史怼长烧 token；够多了引导出方案
+        if sum(1 for m in history if m["role"] == "user") >= AGENT_MAX_TURNS:
+            raise HTTPException(429, "聊得够多啦，点【✨ 出方案给我看】吧～")
         history.append({"role": "user", "content": message})
         try:
             out = _make_scriptwriter().reply(history)
@@ -797,7 +819,11 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/agent/draft")
-    def agent_draft(draft_id: str = Form(...)) -> dict:
+    def agent_draft(request: Request, draft_id: str = Form(...)) -> dict:
+        # draft 会触发图像 API 生成预览图（真金白银），IP 日限比 chat 更严
+        if not agent_limiter.allow("draft", ratelimit.client_ip(request), AGENT_DRAFT_DAILY_IP):
+            _log_event("agent_ip_gate", scope="draft")
+            raise HTTPException(429, "今天出方案的次数到上限啦，明天再来～")
         history = drafts.get(draft_id) or _load_draft(draft_id)
         if not history:
             raise HTTPException(404, "对话不存在，先聊两句再生成")

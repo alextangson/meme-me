@@ -93,6 +93,13 @@ def test_draft_instruction_constrains_scene_words():
     assert "地点" in DRAFT_INSTRUCTION and "道具" in DRAFT_INSTRUCTION
 
 
+def test_system_prompt_refuses_off_topic():
+    # 软防护：别人想拿编剧 agent 当免费 LLM 写代码，要被挡回表情包话题
+    from mememe.core.scriptwriter import SYSTEM_PROMPT
+
+    assert "写代码" in SYSTEM_PROMPT and "ready 保持 false" in SYSTEM_PROMPT
+
+
 def test_draft_retries_once_on_invalid_then_raises():
     bad = json.dumps({"id": "x", "name": "缺梗"})
     chat = FakeChat([bad, bad])

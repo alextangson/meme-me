@@ -564,6 +564,27 @@ def test_agent_chat_returns_quick_options(agent_client):
     assert data["ready"] is False
 
 
+def test_agent_chat_rejects_overlong_message(agent_client):
+    # 单次塞超长 prompt 烧 token → 400，不进 LLM
+    resp = agent_client.post(
+        "/api/agent/chat", data={"message": "薅" * (webapp.AGENT_MSG_MAXLEN + 1)}
+    )
+    assert resp.status_code == 400
+
+
+def test_agent_chat_ip_rate_limited(agent_client, monkeypatch):
+    # 同 IP 当日超限 → 429，挡脚本批量薅 DeepSeek 额度
+    monkeypatch.setattr(webapp, "AGENT_CHAT_DAILY_IP", 2)
+    hdr = {"cf-connecting-ip": "203.0.113.7"}
+    assert agent_client.post("/api/agent/chat", data={"message": "a"}, headers=hdr).status_code == 200
+    assert agent_client.post("/api/agent/chat", data={"message": "b"}, headers=hdr).status_code == 200
+    assert agent_client.post("/api/agent/chat", data={"message": "c"}, headers=hdr).status_code == 429
+    # 另一个 IP 不受影响
+    assert agent_client.post(
+        "/api/agent/chat", data={"message": "d"}, headers={"cf-connecting-ip": "198.51.100.9"}
+    ).status_code == 200
+
+
 def test_agent_draft_creates_custom_pack_private_to_creator(agent_client):
     draft_id = agent_client.post(
         "/api/agent/chat", data={"message": "程序员上线日"}

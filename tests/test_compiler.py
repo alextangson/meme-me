@@ -46,6 +46,30 @@ def test_prompt_keeps_background_clean_of_comic_effects():
     assert "留白" in prompt
 
 
+def test_prompt_caps_scenes_and_proliferating_symbols():
+    """场景→单个小道具；重复/增殖符号（多个问号、漫天纸片）只画一个，不铺满。"""
+    pack = load_pack(PACKS_DIR / "shechu.yaml")
+    prompt = compile_meme(pack, pack.memes[0])
+    assert "只画一个" in prompt
+    assert "增殖" in prompt
+
+
+def test_builtin_pack_actions_avoid_scene_and_proliferation():
+    """官方包梗描述不得带环境场景/增殖措辞（会跑飞成满屏背景）。
+    灵魂/残影/单朵乌云等单一局部符号 OK，不在禁用表里。"""
+    import glob
+
+    banned = ["悬崖", "跑步机", "沙发", "楼梯", "门口", "墙角", "窗台",
+              "窗外", "越冒越", "漫天", "堆成山", "一堆"]
+    offenders = []
+    for f in glob.glob(str(PACKS_DIR / "*.yaml")):
+        pack = load_pack(f)
+        for m in pack.memes:
+            text = f"{m.expression}；{m.action}"
+            offenders += [(Path(f).stem, m.caption, w) for w in banned if w in text]
+    assert not offenders, f"场景/增殖词残留: {offenders}"
+
+
 def test_prompt_demands_square_aspect():
     pack = load_pack(PACKS_DIR / "shechu.yaml")
     for prompt in compile_pack(pack):

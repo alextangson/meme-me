@@ -46,25 +46,25 @@ memes:
   - id: zengji
     caption: 我在增肌
     expression: 理直气壮，眼神坚定
-    action: 面对堆成山的米饭炸鸡大口炫饭
+    action: 捧着一大碗冒尖的米饭炸鸡、埋头大口炫
     shot: 半身
 
   - id: mingtian-yiding
     caption: 明天一定练
     expression: 心虚又躺得舒适
-    action: 瘫在沙发上刷手机，旁边「今日开练」小旗折断倒地
+    action: 瘫坐着低头刷手机，手边「今日开练」的小旗折断倒下
     shot: 全身
 
   - id: youyang-bushu
     caption: 有氧？不熟
     expression: 嫌弃撇嘴，摆手拒绝
-    action: 啃着蛋白棒朝后摆手拒绝，身后跑步机探出半个头
+    action: 啃着一根蛋白棒、扭头朝后摆手嫌弃拒绝
     shot: 半身
 
   - id: tong-taitong
     caption: 痛，太痛了
     expression: 龇牙咧嘴的痛苦面具
-    action: 螃蟹步横着挪下楼梯，一手扶墙
+    action: 螃蟹步横着小挪、一手扶着发酸的大腿龇牙咧嘴
     shot: 全身
 
   # ---- 付费层（后 8 个）----

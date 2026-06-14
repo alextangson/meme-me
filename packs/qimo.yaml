@@ -36,13 +36,13 @@ memes:
   - id: guake-bianyuan
     caption: 挂科边缘
     expression: 惊恐求生
-    action: 单手吊在悬崖边，崖上立着「60分」的牌子
+    action: 双手扒着一块「60分」的牌子边缘、双腿悬空乱蹬
     shot: 全身
 
   - id: ting-bu-dong
     caption: 听不懂
     expression: 眼神涣散，满头问号
-    action: 呆坐着，头顶问号越冒越多
+    action: 呆坐着满脸茫然，头顶冒出一个大问号
     shot: 半身
 
   - id: jiao-le
@@ -54,13 +54,13 @@ memes:
   - id: bai-le
     caption: 摆了
     expression: 彻底放弃的平静微笑
-    action: 四仰八叉躺在一堆书上
+    action: 四仰八叉躺平，手边散着一本摊开的书
     shot: 全身俯视
 
   - id: zaoba-qushi
     caption: 早八去世
     expression: 闭着眼，灵魂出窍
-    action: 站着睡着，头顶一朵下雨乌云
+    action: 站着就睡着，头顶飘着一小朵乌云
     shot: 半身
 
   # ---- 付费层 ----
@@ -109,5 +109,5 @@ memes:
   - id: guo-le
     caption: 过了！！
     expression: 狂喜爆发
-    action: 原地跳起，试卷漫天飞舞
+    action: 原地激动跳起，手里甩着一张试卷
     shot: 全身

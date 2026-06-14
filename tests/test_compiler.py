@@ -37,6 +37,15 @@ def test_prompt_demands_identity_from_reference_photo():
         assert "参考照片" in prompt
 
 
+def test_prompt_keeps_background_clean_of_comic_effects():
+    """漫画特效（速度线/网点/拟声符号）可点缀但不得铺满白底——保贴纸干净 +
+    复杂帧是动图压不进 500KB 的根因。"""
+    pack = load_pack(PACKS_DIR / "shechu.yaml")
+    prompt = compile_meme(pack, pack.memes[0])
+    assert "铺满" in prompt
+    assert "留白" in prompt
+
+
 def test_prompt_demands_square_aspect():
     pack = load_pack(PACKS_DIR / "shechu.yaml")
     for prompt in compile_pack(pack):

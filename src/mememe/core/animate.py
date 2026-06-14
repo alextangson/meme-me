@@ -14,8 +14,18 @@ from PIL import Image
 
 from mememe.core.postprocess import GIF_MAX_BYTES, STICKER_SIZE
 
-# (fps, palette colors, max seconds)
-_LADDER = [(12, 256, 5.0), (10, 128, 4.0), (8, 96, 3.0), (6, 64, 3.0)]
+# (fps, palette colors, max seconds, output px) — 逐级降级直到压进 500KB。
+# 末几级降帧/降色/降分辨率：用户点了「动起来」，宁可糊一点也要出图，不该拿到报错。
+_LADDER = [
+    (12, 256, 5.0, STICKER_SIZE),
+    (10, 128, 4.0, STICKER_SIZE),
+    (8, 96, 3.0, STICKER_SIZE),
+    (6, 64, 3.0, STICKER_SIZE),
+    (6, 48, 2.5, STICKER_SIZE),
+    (5, 40, 2.0, 220),
+    (5, 32, 1.8, 192),
+    (4, 24, 1.6, 160),
+]
 
 # 程序化动效：每个 effect 是一串 (dx, dy) 帧位移
 _EFFECTS = {
@@ -90,19 +100,15 @@ def mp4_to_wechat_gif(
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("动图转换需要 ffmpeg：brew install ffmpeg")
 
-    strip = None
-    strip_top = int(size * (1 - caption_frac))
+    caption_img = None
     if caption_source:
-        src_img = (
-            Image.open(io.BytesIO(caption_source)).convert("RGBA").resize((size, size))
-        )
-        strip = src_img.crop((0, strip_top, size, size))
+        caption_img = Image.open(io.BytesIO(caption_source)).convert("RGBA")
 
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "in.mp4"
         src.write_bytes(mp4)
-        scale = f"scale={size}:{size}:flags=lanczos"
-        for attempt, (fps, colors, dur) in enumerate(_LADDER):
+        for attempt, (fps, colors, dur, px) in enumerate(_LADDER):
+            scale = f"scale={px}:{px}:flags=lanczos"
             frame_dir = Path(tmp) / f"frames{attempt}"
             frame_dir.mkdir()
             _ffmpeg(
@@ -116,7 +122,10 @@ def mp4_to_wechat_gif(
             ]
             if not frames:
                 raise RuntimeError("视频中提取不到帧")
-            if strip is not None:
+            if caption_img is not None:
+                # 文案条按当前级分辨率重算（视频模型几帧后就把字动没了，post 钉死）
+                strip_top = int(px * (1 - caption_frac))
+                strip = caption_img.resize((px, px)).crop((0, strip_top, px, px))
                 for frame in frames:
                     frame.paste(strip, (0, strip_top), strip)
             try:

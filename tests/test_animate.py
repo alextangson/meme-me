@@ -21,6 +21,28 @@ def tiny_mp4(tmp_path_factory) -> bytes:
     return path.read_bytes()
 
 
+@pytest.fixture(scope="module")
+def complex_mp4(tmp_path_factory) -> bytes:
+    """高熵带噪视频——GIF 几乎压不动，复现「源视频太复杂」失败。"""
+    path = tmp_path_factory.mktemp("vid") / "noisy.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi",
+         "-i", "testsrc2=duration=3:size=480x480:rate=12",
+         "-vf", "noise=alls=70:allf=t+u", "-pix_fmt", "yuv420p", str(path)],
+        check=True, capture_output=True,
+    )
+    return path.read_bytes()
+
+
+def test_complex_video_degrades_instead_of_failing(complex_mp4):
+    """高动态/复杂视频也要出图：降级阶梯压进 500KB，而不是抛错让用户空手。"""
+    gif = mp4_to_wechat_gif(complex_mp4)
+    img = Image.open(io.BytesIO(gif))
+    assert img.format == "GIF"
+    assert img.n_frames > 1
+    assert len(gif) <= 500 * 1024
+
+
 def test_gif_meets_wechat_spec(tiny_mp4):
     gif = mp4_to_wechat_gif(tiny_mp4)
     img = Image.open(io.BytesIO(gif))

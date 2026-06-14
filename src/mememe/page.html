@@ -642,6 +642,8 @@ async function postGenerateQueued() {
 $('go').onclick = async () => {
   if (!selfie) { showToast('先上传一张照片'); return; }
   if (!packId) { showToast('先选一套表情主题'); return; }
+  // 漏斗埋点：有照片+主题=真实生成意图。配合 redeem/usage 可拆「开链未试/试了没成」
+  report('gen_click', packId + (currentStyle ? ':' + currentStyle : ''));
   const goLabel = $('go').textContent;
   $('go').disabled = true;
   try {

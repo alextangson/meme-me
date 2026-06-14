@@ -596,6 +596,8 @@ $('drop').onkeydown = (e) => { if (e.key === 'Enter') $('file').click(); };
 $('file').onchange = (e) => {
   selfie = e.target.files[0];
   if (!selfie) return;
+  // 漏斗埋点：传了照片=越过最大承诺点。配合 redeem/gen_click 拆「开链没传/传了没点」
+  report('upload_done', selfie.type || '');
   const drop = $('drop');
   drop.classList.add('has');
   let preview = '';

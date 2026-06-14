@@ -35,7 +35,7 @@ from mememe.core.postprocess import (
     to_sticker_gif,
     to_sticker_png,
 )
-from mememe.core.schema import Pack, load_pack
+from mememe.core.schema import Pack, load_pack, load_pack_lenient
 from mememe.core.styles import STYLES
 from mememe.core import ratelimit
 from mememe.providers.base import ImageProvider
@@ -662,7 +662,9 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     def _pack_info(path: Path, is_custom: bool) -> dict:
-        pack = load_pack(path)
+        # 展示路径用宽松加载：老数据/早期宽松规则存下的超宽 caption 截断兜底，
+        # 不让一个坏 yaml 把 /api/packs/{id} 打成 500。
+        pack = load_pack_lenient(path)
         has_preview = any(
             (b / "previews" / f"{pack.id}.png").exists()
             for b in (PACKS_DIR, CUSTOM_PACKS_DIR)
